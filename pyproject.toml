@@ -1,0 +1,27 @@
+[project]
+name = "receipt-scanner"
+version = "0.1.0"
+description = "Snap a receipt, extract total/date/vendor with an AI model, store in SQLite"
+authors = [
+    { name = "Nicholas Pisarro" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "anthropic>=1.15.0",
+    "fastapi>=0.143.2",
+    "httpx>=0.28.1",
+    "numpy>=2.5.4",
+    "opencv-python-headless>=5.0.0.93",
+    "pillow>=12.3.0",
+    "pydantic>=2.14.1",
+    "python-dotenv>=1.2.4",
+    "python-multipart>=0.0.32",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+receipt-scanner = "receipt_scanner:main"
+
+[build-system]
+requires = ["uv_build>=0.12.2,<0.13.0"]
+build-backend = "uv_build"

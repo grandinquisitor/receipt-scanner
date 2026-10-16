@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Receipt Scanner</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #fff; --ink: #1d1d1b; --muted: #6b6a66; --line: #e3e1db;
+    --accent: #1f6f5c; --accent-ink: #fff; --warn: #a64b2a; --pending: #8a6d1d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --card: #20201e; --ink: #ecebe6; --muted: #9c9a93; --line: #34332f;
+      --accent: #3fa58a; --accent-ink: #0d1512; --warn: #e0835f; --pending: #d6b453;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  header a { color: var(--muted); font-size: 13px; }
+
+  .capture { display: block; width: 100%; padding: 22px; border: 2px dashed var(--accent); border-radius: 14px;
+             background: transparent; color: var(--accent); font-size: 18px; font-weight: 600; cursor: pointer;
+             text-align: center; }
+  .capture input { display: none; }
+  .capture.busy { opacity: .6; pointer-events: none; }
+  #msg { min-height: 1.4em; margin: 8px 2px 16px; color: var(--warn); font-size: 14px; }
+
+  .receipt { display: grid; grid-template-columns: 110px 1fr; gap: 14px; background: var(--card);
+             border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .thumb { width: 110px; height: 150px; object-fit: cover; object-position: top; border-radius: 6px;
+           border: 1px solid var(--line); background: var(--line); cursor: zoom-in; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-content: start; }
+  .fields label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  .fields label.wide { grid-column: 1 / -1; }
+  .fields input { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line);
+                  border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; }
+  .fields input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12px; color: var(--muted); }
+  .status { font-weight: 600; }
+  .status.pending { color: var(--pending); }
+  .status.error { color: var(--warn); }
+  .status.done { color: var(--accent); }
+  .err { grid-column: 1 / -1; color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
+  .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+  .actions button { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+                    border: 1px solid var(--line); background: transparent; color: var(--ink); }
+  .actions button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .actions button.danger { color: var(--warn); }
+  .actions button:disabled { opacity: .5; cursor: default; }
+  .upload { display: none; margin-top: 10px; background: var(--card); border: 1px solid var(--line);
+            border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+  .upload.active { display: block; }
+  .upload-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .upload button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+                   border: 1px solid var(--line); background: transparent; color: var(--ink); }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .bar.indeterminate > div { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+  .conn { display: none; margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; font-size: 14px;
+          background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+  .conn.show { display: block; }
+  .slow { color: var(--warn); }
+  .empty { text-align: center; color: var(--muted); padding: 32px 0; }
+  .total { margin: 0 2px 12px; color: var(--muted); font-size: 13px; }
+
+  @media (max-width: 420px) {
+    .receipt { grid-template-columns: 84px 1fr; }
+    .thumb { width: 84px; height: 116px; }
+    .fields { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Receipt Scanner</h1>
+    <a href="/api/receipts.csv">Export CSV</a>
+  </header>
+
+  <label class="capture" id="captureBtn">
+    📷 Take a photo of a receipt
+    <input type="file" id="file" accept="image/*" capture="environment">
+  </label>
+  <div class="upload" id="upload">
+    <div class="upload-row"><span id="uploadLabel"></span><button id="cancelBtn" type="button">Cancel</button></div>
+    <div class="bar" id="bar"><div id="barFill"></div></div>
+  </div>
+  <div id="msg"></div>
+  <div class="conn" id="conn"></div>
+
+  <div class="total" id="summary"></div>
+  <div id="list"></div>
+</main>
+
+<template id="tpl">
+  <div class="receipt">
+    <a class="thumb-link" target="_blank" rel="noopener"><img class="thumb" alt="receipt"></a>
+    <div class="fields">
+      <label class="wide">Vendor <input name="vendor" autocomplete="off"></label>
+      <label class="wide">Description <input name="description" autocomplete="off" placeholder="e.g. various hardware"></label>
+      <label>Date <input name="receipt_date" type="date"></label>
+      <label>Total <input name="total" inputmode="decimal" autocomplete="off"></label>
+      <label>Currency <input name="currency" maxlength="3" autocomplete="off"></label>
+      <div class="meta"><span class="status"></span><span class="crop"></span><span class="extractor"></span><span class="created"></span></div>
+      <div class="err"></div>
+      <div class="actions">
+        <button class="primary save">Save</button>
+        <button class="toggle"></button>
+        <button class="rotate">Rotate ↻</button>
+        <button class="reextract">Re-extract</button>
+        <button class="danger delete">Delete</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const list = $("#list"), msg = $("#msg"), tpl = $("#tpl"), conn = $("#conn");
+
+const API_TIMEOUT_MS = 20000;      // ordinary API calls
+const UPLOAD_TIMEOUT_MS = 180000;  // whole upload incl. server-side image processing
+const SLOW_EXTRACT_S = 180;        // matches the server's STALE_AFTER_S, when Re-extract is allowed again
+const MAX_UPLOAD_EDGE = 2400;      // server keeps 1600px anyway; shrinking first makes uploads fast
+
+let pollTimer = null, pollDelay = 1500, clockOffset = 0;  // clockOffset = server time - local time
+
+function netError(e) {
+  if (e.name === "TimeoutError" || e.name === "AbortError") return new Error("the server took too long to answer");
+  if (e instanceof TypeError) return new Error("can't reach the server (is it running, and are you on the same network?)");
+  return e;
+}
+
+async function api(path, opts = {}) {
+  let r;
+  try { r = await fetch(path, {signal: AbortSignal.timeout(API_TIMEOUT_MS), ...opts}); }
+  catch (e) { throw netError(e); }
+  if (!r.ok) {
+    let detail = `${r.status} ${r.statusText}`;
+    try { detail = (await r.json()).detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return r.status === 204 ? null : r.json();
+}
+
+function centsToStr(c) { return c == null ? "" : (c / 100).toFixed(2); }
+function strToCents(s) {
+  s = s.trim().replace(",", ".");
+  if (!s) return null;
+  const n = Number(s);
+  if (!isFinite(n)) throw new Error(`"${s}" is not a number`);
+  return Math.round(n * 100);
+}
+function fmtBytes(n) { return n < 1e6 ? `${Math.round(n / 1e3)} KB` : `${(n / 1e6).toFixed(1)} MB`; }
+function fmtSecs(s) { return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`; }
+
+// ---------- receipt list ----------
+
+const rendered = new Map();  // id -> {json, el}; unchanged cards are kept so in-progress edits survive polling
+
+function render(receipts) {
+  const next = [];
+  for (const r of receipts) {
+    const json = JSON.stringify(r), prev = rendered.get(r.id);
+    const el = prev && prev.json === json ? prev.el : card(r);
+    rendered.set(r.id, {json, el});
+    next.push(el);
+  }
+  const ids = new Set(receipts.map(r => r.id));
+  for (const id of rendered.keys()) if (!ids.has(id)) rendered.delete(id);
+  list.replaceChildren(...next);
+  if (!receipts.length) list.innerHTML = `<div class="empty">No receipts yet.</div>`;
+
+  const byCur = {};
+  for (const r of receipts) if (r.total_cents != null) {
+    const c = r.currency || "";
+    byCur[c] = (byCur[c] || 0) + r.total_cents;
+  }
+  const parts = Object.entries(byCur).map(([c, v]) => `${centsToStr(v)} ${c}`.trim());
+  $("#summary").textContent = receipts.length
+    ? `${receipts.length} receipt${receipts.length === 1 ? "" : "s"}` + (parts.length ? ` · total ${parts.join(" + ")}` : "")
+    : "";
+  tickElapsed();
+}
+
+function card(r) {
+  const el = tpl.content.firstElementChild.cloneNode(true);
+  const showScan = r.use_scan && r.scan_url;
+  const src = showScan ? r.scan_url : r.original_url;
+  $(".thumb", el).src = src;
+  $(".thumb-link", el).href = src;
+
+  const f = name => $(`input[name=${name}]`, el);
+  f("vendor").value = r.vendor ?? "";
+  f("description").value = r.description ?? "";
+  f("receipt_date").value = r.receipt_date ?? "";
+  f("total").value = centsToStr(r.total_cents);
+  f("currency").value = r.currency ?? "";
+
+  const st = $(".status", el);
+  st.classList.add(r.status);
+  if (r.status === "pending") {
+    st.textContent = "extracting…";
+    if (r.extract_started_at) el.dataset.started = r.extract_started_at;
+  } else {
+    st.textContent = r.status;
+  }
+  $(".extractor", el).textContent = r.extractor || "";
+  $(".created", el).textContent = new Date(r.created_at).toLocaleString();
+  $(".err", el).textContent = r.error || "";
+  if (!r.error) $(".err", el).remove();
+
+  const toggle = $(".toggle", el);
+  if (r.scan_url) {
+    toggle.textContent = showScan ? "Use uncropped" : "Use cropped";
+    toggle.onclick = () => act(() => api(`/api/receipts/${r.id}`, {
+      method: "PATCH", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({use_scan: !showScan}),
+    }));
+  } else {
+    toggle.remove();  // no receipt edge was found, only the original exists
+  }
+  $(".crop", el).textContent = r.scan_url
+    ? (showScan ? "cropped & straightened" : "showing uncropped")
+    : "not cropped: receipt edge not found";
+  $(".rotate", el).onclick = () => act(() => api(`/api/receipts/${r.id}/rotate`, {method: "POST"}));
+
+  $(".save", el).onclick = () => act(() => api(`/api/receipts/${r.id}`, {
+    method: "PATCH", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      vendor: f("vendor").value.trim() || null,
+      description: f("description").value.trim() || null,
+      receipt_date: f("receipt_date").value || null,
+      total_cents: strToCents(f("total").value),
+      currency: f("currency").value.trim().toUpperCase() || null,
+    }),
+  }), "Saved.");
+  $(".reextract", el).onclick = () => act(() => api(`/api/receipts/${r.id}/extract`, {method: "POST"}));
+  $(".delete", el).onclick = () => {
+    if (el.dataset.confirm) return act(() => api(`/api/receipts/${r.id}`, {method: "DELETE"}));
+    el.dataset.confirm = "1";
+    $(".delete", el).textContent = "Really delete?";
+    setTimeout(() => { delete el.dataset.confirm; $(".delete", el).textContent = "Delete"; }, 3000);
+  };
+  return el;
+}
+
+// Update "extracting… 12s" labels in place, so polling doesn't rebuild cards every second.
+function tickElapsed() {
+  const now = Date.now() + clockOffset;
+  for (const el of list.querySelectorAll("[data-started]")) {
+    const secs = Math.max(0, Math.round((now - Date.parse(el.dataset.started)) / 1000));
+    const st = $(".status", el);
+    st.textContent = `extracting… ${fmtSecs(secs)}`;
+    if (secs > SLOW_EXTRACT_S) {
+      st.textContent += " (unusually slow; try Re-extract)";
+      st.classList.add("slow");
+    }
+  }
+}
+setInterval(tickElapsed, 1000);
+
+async function act(fn, ok = "") {
+  msg.textContent = "";
+  try { await fn(); msg.textContent = ok; await load(); }
+  catch (e) { msg.textContent = e.message; }
+}
+
+// ---------- polling, with connection-loss reporting ----------
+
+async function load() {
+  clearTimeout(pollTimer);
+  let receipts;
+  try {
+    const r = await fetch("/api/receipts", {signal: AbortSignal.timeout(API_TIMEOUT_MS)});
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    const serverTime = Date.parse(r.headers.get("X-Server-Time"));
+    if (!isNaN(serverTime)) clockOffset = serverTime - Date.now();
+    receipts = await r.json();
+  } catch (e) {
+    pollDelay = Math.min(pollDelay * 2, 15000);
+    conn.textContent = `Lost connection to the server: ${netError(e).message}. Retrying in ${Math.round(pollDelay / 1000)}s…`;
+    conn.classList.add("show");
+    pollTimer = setTimeout(load, pollDelay);
+    return;
+  }
+  conn.classList.remove("show");
+  pollDelay = 1500;
+  render(receipts);
+  if (receipts.some(r => r.status === "pending")) pollTimer = setTimeout(load, pollDelay);
+}
+
+// ---------- upload ----------
+
+const upload = $("#upload"), uploadLabel = $("#uploadLabel"), bar = $("#bar"), barFill = $("#barFill");
+const captureBtn = $("#captureBtn"), fileInput = $("#file");
+let currentXhr = null, cancelled = false;
+
+function showStage(text, fraction = null) {
+  upload.classList.add("active");
+  uploadLabel.textContent = text;
+  bar.classList.toggle("indeterminate", fraction == null);
+  barFill.style.width = fraction == null ? "" : `${Math.round(fraction * 100)}%`;
+}
+
+// Re-encode big phone photos to a smaller JPEG before upload. Orientation is baked into the pixels
+// (imageOrientation: "from-image"), since the canvas output carries no EXIF.
+async function shrink(file) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, {imageOrientation: "from-image"}); }
+  catch { return file; }  // browser can't decode it (e.g. HEIC); let the server try
+  const scale = Math.min(1, MAX_UPLOAD_EDGE / Math.max(bmp.width, bmp.height));
+  if (scale === 1 && file.size < 1.5e6) return file;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bmp.width * scale);
+  canvas.height = Math.round(bmp.height * scale);
+  canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  bmp.close?.();
+  const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.85));
+  return blob && blob.size < file.size ? blob : file;
+}
+
+function send(blob) {
+  return new Promise((resolve, reject) => {
+    const xhr = currentXhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/receipts");
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
+    xhr.responseType = "json";
+    const started = Date.now();
+    xhr.upload.onprogress = e => {
+      if (!e.lengthComputable) return showStage(`Uploading ${fmtBytes(e.loaded)}…`);
+      const secs = Math.round((Date.now() - started) / 1000);
+      showStage(`Uploading ${fmtBytes(e.loaded)} of ${fmtBytes(e.total)} · ${fmtSecs(secs)}`, e.loaded / e.total);
+    };
+    xhr.upload.onload = () => showStage("Uploaded. Cropping and saving on the server…");
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(xhr.response);
+      reject(new Error(xhr.response?.detail || `server error ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error("network error: lost connection to the server during upload"));
+    xhr.ontimeout = () => reject(new Error(`no response after ${UPLOAD_TIMEOUT_MS / 1000}s (slow network?)`));
+    xhr.onabort = () => reject(new Error("cancelled"));
+    const fd = new FormData();
+    fd.append("file", blob, "receipt.jpg");
+    xhr.send(fd);
+  });
+}
+
+$("#cancelBtn").onclick = () => { cancelled = true; currentXhr?.abort(); };
+
+fileInput.addEventListener("change", async e => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  captureBtn.classList.add("busy");
+  msg.textContent = "";
+  cancelled = false;
+  try {
+    showStage(`Preparing photo (${fmtBytes(file.size)})…`);
+    const blob = await shrink(file);
+    if (cancelled) throw new Error("cancelled");
+    await send(blob);
+    upload.classList.remove("active");
+    msg.textContent = blob === file ? "" : `Uploaded (shrunk ${fmtBytes(file.size)} → ${fmtBytes(blob.size)}).`;
+    await load();
+  } catch (err) {
+    upload.classList.remove("active");
+    msg.textContent = err.message === "cancelled" ? "Upload cancelled." : `Upload failed: ${err.message}`;
+  } finally {
+    currentXhr = null;
+    captureBtn.classList.remove("busy");
+  }
+});
+
+load();
+</script>
+</body>
+</html>
