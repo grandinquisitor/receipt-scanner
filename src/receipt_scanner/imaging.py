@@ -1,6 +1,7 @@
 """Image handling: EXIF orientation, greyscale, receipt detection + perspective correction."""
 
 import io
+import logging
 
 import cv2
 import numpy as np
@@ -10,6 +11,13 @@ DETECT_EDGE = 1000   # long edge used for contour detection
 MAX_EDGE = 1600      # long edge of stored / sent images
 JPEG_QUALITY = 82
 MIN_AREA_FRAC = 0.15  # receipt must cover at least this fraction of the frame
+
+# Detection settings. Without an unwarper the crop must already be a clean rectangle; with one, a loose
+# crop (with a little margin so the unwarper can see the receipt's edges) is enough.
+STRICT = {"min_fill": 0.85, "margin": 0.0}
+LOOSE = {"min_fill": 0.7, "margin": 0.05}
+
+log = logging.getLogger(__name__)
 
 
 def load_grey(data: bytes) -> np.ndarray:
@@ -55,8 +63,12 @@ def _candidate_masks(small: np.ndarray):
     yield cv2.morphologyEx(edges, cv2.MORPH_CLOSE, rect(5), iterations=2)
 
 
-def find_receipt_quad(grey: np.ndarray) -> np.ndarray | None:
-    """Find the receipt's four corners in full-resolution coordinates, or None."""
+def find_receipt_quad(grey: np.ndarray, min_fill: float = 0.85, margin: float = 0.0) -> np.ndarray | None:
+    """Find the receipt's four corners in full-resolution coordinates, or None.
+
+    min_fill: how much of its rotated bounding box a non-rectangular outline must fill to be accepted.
+    margin: grow the result by this fraction around its centre.
+    """
     h, w = grey.shape
     scale = DETECT_EDGE / max(h, w)
     small = cv2.resize(grey, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA) if scale < 1 else grey
@@ -81,10 +93,12 @@ def find_receipt_quad(grey: np.ndarray) -> np.ndarray | None:
                 # only if the contour fills most of it.
                 rect = cv2.minAreaRect(cnt)
                 rw, rh = rect[1]
-                if rw * rh == 0 or area / (rw * rh) < 0.85:
+                if rw * rh == 0 or area / (rw * rh) < min_fill:
                     continue
                 quad = cv2.boxPoints(rect)
-            return _order_corners(np.asarray(quad, dtype=np.float32) / scale)
+            quad = np.asarray(quad, dtype=np.float32).reshape(4, 2) / scale
+            centre = quad.mean(axis=0)
+            return _order_corners(centre + (quad - centre) * (1 + margin))
     return None
 
 
@@ -94,7 +108,7 @@ def warp(grey: np.ndarray, quad: np.ndarray) -> np.ndarray:
     height = int(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl)))
     dst = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
     m = cv2.getPerspectiveTransform(quad, dst)
-    return cv2.warpPerspective(grey, m, (width, height), flags=cv2.INTER_CUBIC)
+    return cv2.warpPerspective(grey, m, (width, height), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
 
 def enhance(grey: np.ndarray) -> np.ndarray:
@@ -116,14 +130,22 @@ def rotate_jpeg(data: bytes, code: int) -> bytes:
     return to_jpeg(cv2.rotate(grey, code))
 
 
-def scan_from_grey(grey: np.ndarray) -> bytes | None:
-    quad = find_receipt_quad(grey)
+def scan_from_grey(grey: np.ndarray, unwarper=None) -> bytes | None:
+    """Crop and straighten the receipt; if an unwarper is given (anything with `unwarp(grey) -> grey`),
+    also flatten curls and creases with it. Returns None if no receipt was found."""
+    quad = find_receipt_quad(grey, **(LOOSE if unwarper else STRICT))
     if quad is None:
         return None
-    return to_jpeg(enhance(limit_size(warp(grey, quad))))
+    scan = warp(grey, quad)
+    if unwarper is not None:
+        try:
+            scan = unwarper.unwarp(scan)
+        except Exception as e:  # never lose the scan because the unwarper failed
+            log.warning("unwarping skipped: %s", e)
+    return to_jpeg(enhance(limit_size(scan)))
 
 
-def process(data: bytes) -> tuple[bytes, bytes | None]:
+def process(data: bytes, unwarper=None) -> tuple[bytes, bytes | None]:
     """Return (original greyscale JPEG, corrected scan JPEG or None if no receipt was found)."""
     grey = load_grey(data)
-    return to_jpeg(limit_size(grey)), scan_from_grey(grey)
+    return to_jpeg(limit_size(grey)), scan_from_grey(grey, unwarper)

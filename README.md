@@ -17,9 +17,10 @@ Open `http://<your-computer's-LAN-IP>:8000` on your phone and tap **Take a photo
 ## How it works
 
 1. **Image** (`imaging.py`): applies the EXIF rotation, converts to greyscale, and finds the receipt outline
-   (edge contour, falling back to a brightness contour). It then perspective-warps the receipt flat and boosts
-   contrast (CLAHE). Both the uncropped and the corrected image are saved as JPEGs with a long edge of at most
-   1600px, typically 80–200 KB each. If no receipt outline is found, only the original is kept. You can switch
+   (brightness contour, falling back to an edge contour). It then perspective-warps the receipt flat,
+   flattens curls and creases with the unwarper (see below), and boosts contrast (CLAHE). Both the
+   uncropped and the corrected image are saved as JPEGs with a long edge of at most 1600px, typically
+   80–200 KB each. If no receipt outline is found, only the original is kept. You can switch
    between the cropped and uncropped image for each receipt in the UI.
 2. **Extraction** (`extractors/`): runs in the background after upload. If it fails (no key, network error),
    the photo and row are kept with `status = 'error'`, and you can press **Re-extract**.
@@ -36,6 +37,17 @@ Open `http://<your-computer's-LAN-IP>:8000` on your phone and tap **Take a photo
 To add a backend, write a class with a `name` and `extract(jpeg_bytes) -> (ReceiptFields, raw_text)`, then
 register it in `extractors/__init__.py`.
 
+## Unwarping
+
+`RECEIPT_UNWARPER=uvdoc` (default) flattens curved or crumpled receipts with
+[UVDoc](https://github.com/tanguymagne/UVDoc) (MIT), run with onnxruntime on the CPU in about 0.2 s per
+receipt. On first start the server downloads the model's ONNX export (~15 MB, from the `docuwarp`
+package on PyPI, verified by SHA-256) into `data/models/`. Until it's ready, or if it fails, receipts get
+the plain crop. `RECEIPT_UNWARPER=none` turns it off. Backends live in `unwarp/`, and adding one works the
+same way as adding an extractor.
+
+Use **Re-crop** on a receipt to rerun detection and unwarping on its stored photo.
+
 Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 
 ## API
@@ -44,8 +56,10 @@ Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 |---|---|---|
 | POST | `/api/receipts` | multipart `file`; returns the new row (`status: pending`) |
 | GET | `/api/receipts`, `/api/receipts/{id}` | list / fetch |
-| PATCH | `/api/receipts/{id}` | `vendor`, `total_cents`, `currency`, `receipt_date`, `use_scan` |
+| PATCH | `/api/receipts/{id}` | `vendor`, `description`, `total_cents`, `currency`, `receipt_date`, `use_scan` |
 | POST | `/api/receipts/{id}/extract` | re-run extraction on the selected image |
+| POST | `/api/receipts/{id}/recrop` | re-run receipt detection + unwarping on the stored original |
+| POST | `/api/receipts/{id}/rotate` | rotate the stored images 90° clockwise |
 | DELETE | `/api/receipts/{id}` | deletes the row and its images |
 | GET | `/api/receipts/{id}/image/{original\|scan}` | JPEG |
 | GET | `/api/receipts.csv` | export |

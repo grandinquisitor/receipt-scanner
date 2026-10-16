@@ -7,6 +7,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from . import imaging
 from .db import DB, EDITABLE, utc_now
 from .extractors import ExtractionError, Extractor, get_extractor
+from .unwarp import Unwarper, get_unwarper
 
 log = logging.getLogger("receipt_scanner")
 
@@ -28,12 +30,26 @@ STATIC_DIR = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
 db = DB(DATA_DIR / "receipts.db")
-app = FastAPI(title="Receipt Scanner")
 
 
 @lru_cache(maxsize=1)
 def extractor() -> Extractor:
     return get_extractor()
+
+
+@lru_cache(maxsize=1)
+def unwarper() -> Unwarper | None:
+    return get_unwarper(DATA_DIR / "models")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if (u := unwarper()) is not None:
+        u.start()  # loads (and on first run downloads) the model in the background
+    yield
+
+
+app = FastAPI(title="Receipt Scanner", lifespan=lifespan)
 
 
 def rotate_images(row: dict, code: int) -> None:
@@ -45,17 +61,24 @@ def rotate_images(row: dict, code: int) -> None:
     db.update(row["id"], image_version=row["image_version"] + 1)
 
 
+def make_scan(row: dict) -> bool:
+    """(Re)build the scan from the stored original. Returns False if no receipt was found,
+    in which case any existing scan is left alone."""
+    grey = imaging.load_grey((DATA_DIR / row["original_path"]).read_bytes())
+    scan = imaging.scan_from_grey(grey, unwarper())
+    if scan is None:
+        return False
+    scan_rel = row["scan_path"] or row["original_path"].replace("_original.jpg", "_scan.jpg")
+    (DATA_DIR / scan_rel).write_bytes(scan)
+    use_scan = row["use_scan"] if row["scan_path"] else 1
+    db.update(row["id"], scan_path=scan_rel, use_scan=use_scan, image_version=row["image_version"] + 1)
+    return True
+
+
 def ensure_scan(row: dict) -> dict:
     """Retry receipt detection on the stored original if no scan exists yet."""
-    if row["scan_path"]:
-        return row
-    grey = imaging.load_grey((DATA_DIR / row["original_path"]).read_bytes())
-    scan = imaging.scan_from_grey(grey)
-    if scan is None:
-        return row
-    scan_rel = row["original_path"].replace("_original.jpg", "_scan.jpg")
-    (DATA_DIR / scan_rel).write_bytes(scan)
-    db.update(row["id"], scan_path=scan_rel, use_scan=1, image_version=row["image_version"] + 1)
+    if not row["scan_path"]:
+        make_scan(row)
     return db.get(row["id"])
 
 
@@ -134,7 +157,7 @@ async def upload(background: BackgroundTasks, file: UploadFile = File(...)):
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "image too large")
     try:
-        original, scan = await run_in_threadpool(imaging.process, data)
+        original, scan = await run_in_threadpool(imaging.process, data, unwarper())
     except Exception as e:
         raise HTTPException(400, f"could not read image: {e}") from e
 
@@ -206,6 +229,15 @@ def re_extract(rid: int, background: BackgroundTasks):
         raise HTTPException(409, "extraction already running")
     db.update(rid, status="pending", error=None, extract_started_at=utc_now())
     background.add_task(run_extraction, rid)
+    return public(db.get(rid))
+
+
+@app.post("/api/receipts/{rid}/recrop")
+async def recrop(rid: int):
+    """Re-run receipt detection (and unwarping) on the stored original."""
+    row = get_or_404(rid)
+    if not await run_in_threadpool(make_scan, row):
+        raise HTTPException(422, "couldn't find the receipt's edges in this photo")
     return public(db.get(rid))
 
 
