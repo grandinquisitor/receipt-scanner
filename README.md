@@ -30,6 +30,10 @@ Open `http://<your-computer's-LAN-IP>:8000` on your phone and tap **Take photo**
 one or more existing photos (HEIC works too). On a computer you can also drag photos onto the page. Both use
 plain file inputs, so it works over plain HTTP; no certificate is needed.
 
+To get an app icon on your phone, use **Add to Home Screen** (Safari's share menu on iPhone, Chrome's menu
+on Android). It then opens full-screen, without the browser's address bar. The icons are drawn by
+`scripts/make_icons.py`; edit and rerun it (`uv run python scripts/make_icons.py`) to change them.
+
 Each receipt can carry **tags** (e.g. "business", "home office"). Type in a receipt's tag box for suggestions
 from tags you've used before, most-used first. Tags are case-insensitive, and a tag disappears once no
 receipt uses it.

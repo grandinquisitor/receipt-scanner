@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Receipt Scanner", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")  # icons, web app manifest
 
 
 def rotate_images(row: dict, code: int) -> None:
@@ -152,6 +154,16 @@ def get_or_404(rid: int) -> dict:
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():  # browsers ask for this path on their own
+    return FileResponse(STATIC_DIR / "icons" / "favicon.ico", media_type="image/x-icon")
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():  # name and icons for "Add to Home Screen"
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
 
 
 @app.post("/api/receipts", status_code=201)
