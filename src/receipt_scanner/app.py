@@ -26,6 +26,10 @@ log = logging.getLogger("receipt_scanner")
 DATA_DIR = Path(os.environ.get("RECEIPT_DATA_DIR", "data")).resolve()
 IMAGE_DIR = DATA_DIR / "images"
 IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+THUMB_DIR = DATA_DIR / "thumbs"  # derived from images/, safe to delete; rebuilt on demand
+THUMB_DIR.mkdir(parents=True, exist_ok=True)
+# Image URLs carry ?v=<image_version>, which changes whenever an image does, so browsers may cache forever.
+IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
@@ -133,6 +137,8 @@ def public(row: dict) -> dict:
     v = f"?v={row['image_version']}"
     out["original_url"] = f"/api/receipts/{rid}/image/original{v}"
     out["scan_url"] = f"/api/receipts/{rid}/image/scan{v}" if row["scan_path"] else None
+    out["original_thumb_url"] = f"/api/receipts/{rid}/thumb/original{v}"
+    out["scan_thumb_url"] = f"/api/receipts/{rid}/thumb/scan{v}" if row["scan_path"] else None
     return out
 
 
@@ -281,13 +287,35 @@ def delete_receipt(rid: int):
     for key in ("original_path", "scan_path"):
         if row[key]:
             (DATA_DIR / row[key]).unlink(missing_ok=True)
+            thumb_path(row[key]).unlink(missing_ok=True)
     db.delete(rid)
 
 
-@app.get("/api/receipts/{rid}/image/{kind}")
-def image(rid: int, kind: str):
+def image_path(rid: int, kind: str) -> str:
     row = get_or_404(rid)
     key = {"original": "original_path", "scan": "scan_path"}.get(kind)
     if key is None or not row[key]:
         raise HTTPException(404, "no such image")
-    return FileResponse(DATA_DIR / row[key], media_type="image/jpeg")
+    return row[key]
+
+
+def thumb_path(image_rel: str) -> Path:
+    return THUMB_DIR / Path(image_rel).name
+
+
+@app.get("/api/receipts/{rid}/image/{kind}")
+def image(rid: int, kind: str):
+    return FileResponse(DATA_DIR / image_path(rid, kind), media_type="image/jpeg", headers=IMMUTABLE)
+
+
+@app.get("/api/receipts/{rid}/thumb/{kind}")
+def thumb(rid: int, kind: str):
+    """Small version for the list, made on first request and remade whenever the image is newer
+    (after a rotate or re-crop)."""
+    rel = image_path(rid, kind)
+    src, dst = DATA_DIR / rel, thumb_path(rel)
+    if not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime:
+        tmp = dst.with_suffix(f".{uuid.uuid4().hex}.tmp")
+        tmp.write_bytes(imaging.make_thumb(src.read_bytes()))
+        tmp.replace(dst)  # atomic, so a concurrent request never sees half a file
+    return FileResponse(dst, media_type="image/jpeg", headers=IMMUTABLE)

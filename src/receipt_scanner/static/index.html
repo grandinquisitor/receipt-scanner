@@ -161,7 +161,7 @@
 
 <template id="tpl">
   <div class="receipt">
-    <a class="thumb-link" target="_blank" rel="noopener"><img class="thumb" alt="receipt"></a>
+    <a class="thumb-link" target="_blank" rel="noopener"><img class="thumb" alt="receipt" loading="lazy" decoding="async"></a>
     <div class="fields">
       <label class="wide">Vendor <input name="vendor" autocomplete="off"></label>
       <label class="wide">Description <input name="description" autocomplete="off" placeholder="e.g. various hardware"></label>
@@ -273,7 +273,7 @@ function card(r) {
   const el = tpl.content.firstElementChild.cloneNode(true);
   const showScan = r.use_scan && r.scan_url;
   const src = showScan ? r.scan_url : r.original_url;
-  $(".thumb", el).src = src;
+  $(".thumb", el).src = showScan ? r.scan_thumb_url : r.original_thumb_url;
   $(".thumb-link", el).href = src;
   $(".thumb-link", el).onclick = e => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;  // let modified clicks open a tab

@@ -29,7 +29,8 @@ receipt uses it.
    between the cropped and uncropped image for each receipt in the UI.
 2. **Extraction** (`extractors/`): runs in the background after upload. If it fails (no key, network error),
    the photo and row are kept with `status = 'error'`, and you can press **Re-extract**.
-3. **Storage**: `data/receipts.db` (table `receipts`), with images in `data/images/`. Totals are stored as
+3. **Storage**: `data/receipts.db` (table `receipts`), with images in `data/images/`. List thumbnails are
+   made on demand in `data/thumbs/` and can be deleted at any time. Totals are stored as
    integer cents. Every field can be edited in the UI, and there is a CSV export at `/api/receipts.csv`.
 
 ## Choosing an extractor
