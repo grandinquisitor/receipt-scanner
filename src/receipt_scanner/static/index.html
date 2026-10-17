@@ -45,6 +45,10 @@
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-content: start; }
   .fields label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
   .fields label.wide { grid-column: 1 / -1; }
+  .money { display: flex; }
+  .money input[name=total] { border-radius: 6px 0 0 6px; }
+  .money .cur { flex: none; width: 3.8em; border-left: 0; border-radius: 0 6px 6px 0; text-align: center;
+                text-transform: uppercase; font-size: 12px; color: var(--muted); }
   .fields input { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line);
                   border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; }
   .fields input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -162,8 +166,13 @@
       <label class="wide">Vendor <input name="vendor" autocomplete="off"></label>
       <label class="wide">Description <input name="description" autocomplete="off" placeholder="e.g. various hardware"></label>
       <label>Date <input name="receipt_date" type="date"></label>
-      <label>Total <input name="total" inputmode="decimal" autocomplete="off"></label>
-      <label>Currency <input name="currency" maxlength="3" autocomplete="off"></label>
+      <label>Total
+        <span class="money">
+          <input name="total" inputmode="decimal" autocomplete="off">
+          <input name="currency" class="cur" maxlength="3" autocomplete="off" placeholder="cur"
+                 aria-label="Currency" title="Currency (e.g. USD)">
+        </span>
+      </label>
       <div class="tags"><span class="chips"></span>
         <div class="tag-entry">
           <input class="tag-input" placeholder="+ tag" autocomplete="off" autocapitalize="none" enterkeyhint="done" maxlength="40">
