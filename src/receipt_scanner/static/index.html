@@ -206,6 +206,7 @@
       <div class="err"></div>
       <div class="actions">
         <button class="primary save" disabled>Save</button>
+        <button class="revert" disabled title="Undo unsaved changes">Revert</button>
         <button class="toggle"></button>
         <button class="rotate">Rotate ↻</button>
         <button class="recrop">Re-crop</button>
@@ -334,7 +335,9 @@ function card(r) {
   // Unsaved-change tracking: compare what's typed with what's stored, after the same clean-up Save does
   // (so "4.4" vs "4.40" or "usd" vs "USD" don't count as changes).
   const save = $(".save", el), note = $(".note", el);
-  const original = Object.fromEntries(EDIT_FIELDS.map(n => [n, normalise(n, f(n).value)]));
+  const stored = Object.fromEntries(EDIT_FIELDS.map(n => [n, f(n).value]));  // as shown when the card was built
+  const original = Object.fromEntries(EDIT_FIELDS.map(n => [n, normalise(n, stored[n])]));
+  const revert = $(".revert", el);
   let noteTimer = null;
   function setNote(text, kind = "") {
     clearTimeout(noteTimer);
@@ -349,12 +352,17 @@ function card(r) {
       dirty ||= changed;
     }
     el.classList.toggle("dirty", dirty);
-    save.disabled = !dirty;
+    save.disabled = revert.disabled = !dirty;
     if (dirty) setNote("Unsaved changes", "dirty");
     else if (note.classList.contains("dirty")) setNote("");
     return dirty;
   }
   for (const n of EDIT_FIELDS) f(n).addEventListener("input", checkDirty);
+  revert.onclick = () => {
+    for (const n of EDIT_FIELDS) f(n).value = stored[n];
+    checkDirty();
+    setNote("");
+  };
   el.unsavedEdits = () => Object.fromEntries(EDIT_FIELDS.filter(n => f(n).classList.contains("changed")).map(n => [n, f(n).value]));
   el.restoreEdits = edits => {
     for (const [n, v] of Object.entries(edits)) f(n).value = v;
@@ -399,7 +407,7 @@ function card(r) {
   $(".recrop", el).onclick = () => act(() => api(`/api/receipts/${r.id}/recrop`, {method: "POST"}), "Re-cropped.");
 
   save.onclick = async () => {
-    save.disabled = true;
+    save.disabled = revert.disabled = true;
     save.textContent = "Saving…";
     try {
       await api(`/api/receipts/${r.id}`, {
@@ -414,7 +422,7 @@ function card(r) {
       });
     } catch (e) {
       save.textContent = "Save";
-      checkDirty();
+      checkDirty();  // also re-enables Revert
       setNote(`Not saved: ${e.message}`, "failed");
       return;
     }
