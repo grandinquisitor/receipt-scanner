@@ -64,6 +64,17 @@
   .actions button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .actions button.danger { color: var(--warn); }
   .actions button:disabled { opacity: .5; cursor: default; }
+  .note { align-self: center; font-size: 12px; margin-left: 2px; }
+  .note.dirty { color: var(--pending); }
+  .note.saved { color: var(--accent); font-weight: 600; }
+  .note.failed { color: var(--warn); }
+  .receipt.dirty { border-color: var(--pending); box-shadow: inset 4px 0 0 var(--pending); }
+  .fields input.changed { border-color: var(--pending); background: color-mix(in srgb, var(--pending) 8%, transparent); }
+  .receipt.just-saved { animation: saved 1.8s ease-out; }
+  @keyframes saved {
+    from { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+    to { border-color: var(--line); box-shadow: 0 0 0 3px transparent; }
+  }
   .upload { display: none; margin-top: 10px; background: var(--card); border: 1px solid var(--line);
             border-radius: 10px; padding: 10px 12px; font-size: 14px; }
   .upload.active { display: block; }
@@ -194,12 +205,13 @@
       <div class="meta"><span class="status"></span><span class="crop"></span><span class="extractor"></span><span class="created"></span></div>
       <div class="err"></div>
       <div class="actions">
-        <button class="primary save">Save</button>
+        <button class="primary save" disabled>Save</button>
         <button class="toggle"></button>
         <button class="rotate">Rotate ↻</button>
         <button class="recrop">Re-crop</button>
         <button class="reextract">Re-extract</button>
         <button class="danger delete">Delete</button>
+        <span class="note" aria-live="polite"></span>
       </div>
     </div>
   </div>
@@ -217,6 +229,7 @@ const MAX_UPLOAD_EDGE = 2400;      // server keeps 1600px anyway; shrinking firs
 let pollTimer = null, pollDelay = 1500, clockOffset = 0;  // clockOffset = server time - local time
 let allTags = [];        // [{name, count}], most-used first; feeds tag suggestions
 let refocusTagFor = null;  // receipt id whose tag input should keep focus after a re-render
+let savedFlashFor = null;  // receipt id whose card should show "Saved" after the next render
 let lastReceipts = null; // latest list from the server, so filter changes re-render without a fetch
 
 function netError(e) {
@@ -256,7 +269,8 @@ function render(receipts) {
   const next = [];
   for (const r of receipts) {
     const json = JSON.stringify(r), prev = rendered.get(r.id);
-    const el = prev && prev.json === json ? prev.el : card(r);
+    let el = prev && prev.json === json ? prev.el : card(r);
+    if (prev && el !== prev.el) el.restoreEdits(prev.el.unsavedEdits());  // e.g. a tag was added mid-edit
     rendered.set(r.id, {json, el});
     next.push(el);
   }
@@ -265,6 +279,11 @@ function render(receipts) {
   list.replaceChildren(...next);
   const visible = receipts.filter(matchesFilter);
   for (const r of receipts) rendered.get(r.id).el.hidden = !matchesFilter(r);
+  if (savedFlashFor != null) {
+    const el = rendered.get(savedFlashFor)?.el;
+    savedFlashFor = null;
+    if (el) el.showSaved();
+  }
   if (refocusTagFor != null) {
     const input = rendered.get(refocusTagFor) && $(".tag-input", rendered.get(refocusTagFor).el);
     refocusTagFor = null;
@@ -312,6 +331,43 @@ function card(r) {
   f("total").value = centsToStr(r.total_cents);
   f("currency").value = r.currency ?? "";
 
+  // Unsaved-change tracking: compare what's typed with what's stored, after the same clean-up Save does
+  // (so "4.4" vs "4.40" or "usd" vs "USD" don't count as changes).
+  const save = $(".save", el), note = $(".note", el);
+  const original = Object.fromEntries(EDIT_FIELDS.map(n => [n, normalise(n, f(n).value)]));
+  let noteTimer = null;
+  function setNote(text, kind = "") {
+    clearTimeout(noteTimer);
+    note.textContent = text;
+    note.className = `note ${kind}`;
+  }
+  function checkDirty() {
+    let dirty = false;
+    for (const n of EDIT_FIELDS) {
+      const changed = normalise(n, f(n).value) !== original[n];
+      f(n).classList.toggle("changed", changed);
+      dirty ||= changed;
+    }
+    el.classList.toggle("dirty", dirty);
+    save.disabled = !dirty;
+    if (dirty) setNote("Unsaved changes", "dirty");
+    else if (note.classList.contains("dirty")) setNote("");
+    return dirty;
+  }
+  for (const n of EDIT_FIELDS) f(n).addEventListener("input", checkDirty);
+  el.unsavedEdits = () => Object.fromEntries(EDIT_FIELDS.filter(n => f(n).classList.contains("changed")).map(n => [n, f(n).value]));
+  el.restoreEdits = edits => {
+    for (const [n, v] of Object.entries(edits)) f(n).value = v;
+    checkDirty();
+  };
+  el.showSaved = () => {
+    el.classList.remove("just-saved");
+    void el.offsetWidth;  // restart the animation if it's still running
+    el.classList.add("just-saved");
+    setNote("✓ Saved", "saved");
+    noteTimer = setTimeout(() => setNote(""), 2500);
+  };
+
   const st = $(".status", el);
   st.classList.add(r.status);
   if (r.status === "pending") {
@@ -342,16 +398,33 @@ function card(r) {
   $(".rotate", el).onclick = () => act(() => api(`/api/receipts/${r.id}/rotate`, {method: "POST"}));
   $(".recrop", el).onclick = () => act(() => api(`/api/receipts/${r.id}/recrop`, {method: "POST"}), "Re-cropped.");
 
-  $(".save", el).onclick = () => act(() => api(`/api/receipts/${r.id}`, {
-    method: "PATCH", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      vendor: f("vendor").value.trim() || null,
-      description: f("description").value.trim() || null,
-      receipt_date: f("receipt_date").value || null,
-      total_cents: strToCents(f("total").value),
-      currency: f("currency").value.trim().toUpperCase() || null,
-    }),
-  }), "Saved.");
+  save.onclick = async () => {
+    save.disabled = true;
+    save.textContent = "Saving…";
+    try {
+      await api(`/api/receipts/${r.id}`, {
+        method: "PATCH", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          vendor: f("vendor").value.trim() || null,
+          description: f("description").value.trim() || null,
+          receipt_date: f("receipt_date").value || null,
+          total_cents: strToCents(f("total").value),
+          currency: f("currency").value.trim().toUpperCase() || null,
+        }),
+      });
+    } catch (e) {
+      save.textContent = "Save";
+      checkDirty();
+      setNote(`Not saved: ${e.message}`, "failed");
+      return;
+    }
+    savedFlashFor = r.id;
+    await load();  // rebuilds the card from the saved row, which then shows "Saved"
+  };
+  // Enter in a text field saves, like a form would.
+  for (const n of EDIT_FIELDS) f(n).addEventListener("keydown", e => {
+    if (e.key === "Enter" && !save.disabled) { e.preventDefault(); save.click(); }
+  });
   $(".reextract", el).onclick = () => act(() => api(`/api/receipts/${r.id}/extract`, {method: "POST"}));
   $(".delete", el).onclick = () => {
     if (el.dataset.confirm) return act(() => api(`/api/receipts/${r.id}`, {method: "DELETE"}));
@@ -361,6 +434,19 @@ function card(r) {
   };
   return el;
 }
+
+const EDIT_FIELDS = ["vendor", "description", "receipt_date", "total", "currency"];
+
+function normalise(name, value) {
+  value = value.trim();
+  if (name === "currency") return value.toUpperCase();
+  if (name === "total") { try { return String(strToCents(value)); } catch { return `invalid:${value}`; } }
+  return value;
+}
+
+window.addEventListener("beforeunload", e => {
+  if (list.querySelector(".receipt.dirty")) e.preventDefault();  // browser asks "leave site?"
+});
 
 // Update "extracting… 12s" labels in place, so polling doesn't rebuild cards every second.
 function tickElapsed() {
