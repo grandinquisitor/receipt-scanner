@@ -2,7 +2,7 @@
 
     uv run python scripts/make_icons.py
 
-The icon is a white receipt with a zigzag tear-off edge on the app's green. Shapes are defined once on a
+The icon is a white receipt with a zigzag tear-off edge on the app's carbon blue, its total in serial-number red. Shapes are defined once on a
 100x100 grid and written both as SVG and, via Pillow, as PNG/ICO, so every size matches.
 """
 
@@ -12,10 +12,10 @@ from PIL import Image, ImageDraw
 
 OUT = Path(__file__).resolve().parent.parent / "src" / "receipt_scanner" / "static" / "icons"
 
-GREEN = "#1f6f5c"   # --accent in index.html
+BLUE = "#2b2f8f"    # --accent in index.html
 PAPER = "#ffffff"
-INK = "#b7c9c2"     # printed lines
-TOTAL = "#1f6f5c"   # the bold "total" line
+INK = "#c3c5e3"     # printed lines
+TOTAL = "#c4262e"   # the bold "total" line; --warn in index.html
 
 
 def receipt(scale: float = 1.0):
@@ -36,7 +36,7 @@ def receipt(scale: float = 1.0):
 
 def svg(rounded: bool) -> str:
     outline, lines = receipt()
-    bg = f'<rect width="100" height="100" rx="{22 if rounded else 0}" fill="{GREEN}"/>'
+    bg = f'<rect width="100" height="100" rx="{22 if rounded else 0}" fill="{BLUE}"/>'
     pts = " ".join(f"{x:g},{y:g}" for x, y in outline)
     body = [bg, f'<polygon points="{pts}" fill="{PAPER}" stroke="{PAPER}" stroke-width="2" stroke-linejoin="round"/>']
     for x1, y, x2, t, c in lines:
@@ -49,7 +49,7 @@ def png(size: int, rounded: bool, scale: float = 1.0) -> Image.Image:
     px = size * ss / 100
     img = Image.new("RGBA", (size * ss,) * 2, (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((0, 0, size * ss - 1, size * ss - 1), radius=22 * px if rounded else 0, fill=GREEN)
+    d.rounded_rectangle((0, 0, size * ss - 1, size * ss - 1), radius=22 * px if rounded else 0, fill=BLUE)
     outline, lines = receipt(scale)
     d.polygon([(x * px, y * px) for x, y in outline], fill=PAPER)
     for x1, y, x2, t, c in lines:

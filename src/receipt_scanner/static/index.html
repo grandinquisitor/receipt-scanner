@@ -9,163 +9,213 @@
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="apple-mobile-web-app-title" content="Receipts">
-<meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#161615" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4edc6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14162b" media="(prefers-color-scheme: dark)">
+<link rel="preload" href="/static/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+  /* Archivo (SIL OFL, see static/fonts/OFL.txt), variable in weight and width */
+  @font-face { font-family: "Archivo"; font-weight: 100 900; font-stretch: 62% 125%; font-display: swap;
+               src: url(/static/fonts/archivo-latin.woff2) format("woff2");
+               unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "Archivo"; font-weight: 100 900; font-stretch: 62% 125%; font-display: swap;
+               src: url(/static/fonts/archivo-latin-ext.woff2) format("woff2");
+               unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+  /* A duplicate receipt book: canary copy sheet underneath, white originals on top, carbon-blue ink,
+     numbering-machine red for serials. In dark mode the page becomes the carbon sheet itself. */
   :root {
-    --bg: #f6f5f2; --card: #fff; --ink: #1d1d1b; --muted: #6b6a66; --line: #e3e1db;
-    --accent: #1f6f5c; --accent-ink: #fff; --warn: #a64b2a; --pending: #8a6d1d;
+    color-scheme: light dark;
+    --bg: #f4edc6; --card: #fcfcf8; --stub: #f8f4dc; --ink: #1a1c33; --muted: #5c5d70; --line: #d8d4be;
+    --accent: #2b2f8f; --accent-ink: #fff; --warn: #c4262e; --pending: #9a6200;
+    --narrow: "Archivo", "Arial Narrow", "Roboto Condensed", sans-serif-condensed, sans-serif;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #161615; --card: #20201e; --ink: #ecebe6; --muted: #9c9a93; --line: #34332f;
-      --accent: #3fa58a; --accent-ink: #0d1512; --warn: #e0835f; --pending: #d6b453;
+      --bg: #14162b; --card: #1d2040; --stub: #191b37; --ink: #e4e5f4; --muted: #9a9cbc; --line: #33375e;
+      --accent: #9ca0f5; --accent-ink: #14162b; --warn: #ff7a7f; --pending: #e3b04b;
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 16px; }
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-  h1 { font-size: 20px; margin: 0; }
-  header a { color: var(--muted); font-size: 13px; }
+         font: 15px/1.45 "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+         font-variant-numeric: tabular-nums; }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  h1 { margin: 0; font-family: var(--narrow); font-stretch: 62%; font-weight: 850; font-size: 56px;
+       line-height: .85; letter-spacing: -.01em; color: var(--accent); }
+  header a { color: var(--accent); font-size: 14px; font-weight: 600; text-underline-offset: 3px; padding-bottom: 4px; }
 
   .add { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .add.busy { opacity: .6; pointer-events: none; }
-  .capture { display: block; padding: 22px 12px; border: 2px dashed var(--accent); border-radius: 14px;
-             background: transparent; color: var(--accent); font-size: 17px; font-weight: 600; cursor: pointer;
-             text-align: center; }
-  .capture.primary { background: var(--accent); color: var(--accent-ink); border-style: solid; }
-  .capture input { display: none; }
-  .drop-hint { margin: 6px 2px 0; font-size: 12px; color: var(--muted); text-align: center; }
+  .add.busy { opacity: .55; pointer-events: none; }
+  .capture { display: block; padding: 20px 12px; border: 2px solid var(--accent); border-radius: 4px;
+             background: var(--card); color: var(--accent); font-size: 18px; font-weight: 700; font-stretch: 87.5%;
+             cursor: pointer; text-align: center; }
+  .capture.primary { background: var(--accent); color: var(--accent-ink); }
+  .capture:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+  /* visually hidden rather than display:none, so the inputs stay reachable by keyboard */
+  .capture input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .drop-hint { margin: 8px 2px 0; font-size: 13px; color: var(--muted); text-align: center; }
   body.dragging main::after { content: "Drop photos to upload"; position: fixed; inset: 12px; z-index: 20;
-             display: grid; place-items: center; border: 3px dashed var(--accent); border-radius: 18px;
-             background: color-mix(in srgb, var(--bg) 85%, transparent); color: var(--accent);
-             font-size: 22px; font-weight: 600; pointer-events: none; }
+             display: grid; place-items: center; border: 3px dashed var(--accent); border-radius: 6px;
+             background: color-mix(in srgb, var(--bg) 88%, transparent); color: var(--accent);
+             font-family: var(--narrow); font-stretch: 62%; font-weight: 850; font-size: 44px; pointer-events: none; }
   @media (hover: none) { .drop-hint { display: none; } }  /* touch devices can't drag files in */
-  #msg { min-height: 1.4em; margin: 8px 2px 16px; color: var(--warn); font-size: 14px; }
+  #msg { min-height: 1.4em; margin: 8px 2px 14px; color: var(--warn); font-size: 14px; }
 
-  .receipt { display: grid; grid-template-columns: 110px 1fr; gap: 14px; background: var(--card);
-             border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
-  /* As a grid item the link would stretch to the card's full height, making the space under the image clickable. */
-  .thumb-link { align-self: start; line-height: 0; }
+  /* Each receipt is a page of the book: a stub on the left (serial number and photo), torn along a perforation. */
+  .receipt { --stub-w: 132px; position: relative; display: grid; grid-template-columns: var(--stub-w) 1fr;
+             background: var(--card); border: 1px solid var(--line); border-radius: 2px; margin-bottom: 14px;
+             box-shadow: 0 1px 0 var(--line), 0 2px 0 color-mix(in srgb, var(--line) 50%, transparent); }
   .receipt[hidden] { display: none; }  /* hidden by the tag filter; display:grid above would override it */
-  .thumb { width: 110px; height: 150px; object-fit: cover; object-position: top; border-radius: 6px;
+  .receipt::before { content: ""; position: absolute; top: 6px; bottom: 6px; left: calc(var(--stub-w) - 4px); width: 8px;
+                     background: radial-gradient(circle at 4px 4px, var(--bg) 2.6px, transparent 3px) 0 0 / 8px 12px repeat-y;
+                     pointer-events: none; }
+  .stub { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 16px 12px 12px;
+          background: var(--stub); border-right: 1px dashed var(--line); }
+  .serial { font-family: var(--narrow); font-stretch: 62%; font-weight: 800; font-size: 22px; line-height: 1;
+            color: var(--warn); letter-spacing: .02em; }
+  /* The link stays as tall as the image, so the empty stub below it isn't clickable. */
+  .thumb-link { line-height: 0; }
+  .thumb { width: 104px; height: 142px; object-fit: cover; object-position: top; border-radius: 1px;
            border: 1px solid var(--line); background: var(--line); cursor: zoom-in; }
-  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-content: start; }
-  .fields label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; align-content: start; padding: 14px 16px 14px 18px; min-width: 0; }
+  .fields label { display: flex; flex-direction: column; font-size: 12px; font-weight: 600; font-stretch: 87.5%;
+                  color: var(--muted); gap: 1px; }
   .fields label.wide { grid-column: 1 / -1; }
-  .money { display: flex; }
-  .money input[name=total] { border-radius: 6px 0 0 6px; }
-  .money .cur { flex: none; width: 3.8em; border-left: 0; border-radius: 0 6px 6px 0; text-align: center;
-                text-transform: uppercase; font-size: 12px; color: var(--muted); }
-  .fields input { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line);
-                  border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; }
-  .fields input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12px; color: var(--muted); }
-  .status { font-weight: 600; }
+  .money { display: flex; gap: 6px; }
+  .money .cur { flex: none; width: 3.4em; text-align: center; text-transform: uppercase; color: var(--muted); }
+  /* filled in like a form: a rule to write on rather than a box */
+  .fields input { font: inherit; font-size: 16px; font-weight: 500; font-stretch: 100%; color: var(--ink);
+                  background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+                  padding: 4px 1px 3px; width: 100%; min-width: 0; }
+  .fields input[name=vendor] { font-size: 20px; font-weight: 700; }
+  .fields input[name=total] { font-weight: 700; }
+  .fields input::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+  .fields input:focus { outline: none; border-bottom: 2px solid var(--accent); padding-bottom: 2px; }
+  .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 12px; color: var(--muted); }
+  .status { font-weight: 700; }
   .status.pending { color: var(--pending); }
   .status.error { color: var(--warn); }
   .status.done { color: var(--accent); }
   .err { grid-column: 1 / -1; color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
-  .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
-  .actions button { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 6px; cursor: pointer;
-                    border: 1px solid var(--line); background: transparent; color: var(--ink); }
+  .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .actions button { font: inherit; font-size: 13px; font-weight: 600; font-stretch: 87.5%; padding: 5px 10px;
+                    border-radius: 3px; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--ink); }
+  .actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .actions button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  .actions button.danger { color: var(--warn); }
-  .actions button:disabled { opacity: .5; cursor: default; }
+  .actions button.primary:hover:not(:disabled) { color: var(--accent-ink); }
+  .actions button.danger, .actions button.danger:hover:not(:disabled) { color: var(--warn); }
+  .actions button.danger:hover:not(:disabled) { border-color: var(--warn); }
+  .actions button:disabled { opacity: .45; cursor: default; }
   .note { align-self: center; font-size: 12px; margin-left: 2px; }
-  .note.dirty { color: var(--pending); }
-  .note.saved { color: var(--accent); font-weight: 600; }
+  .note.dirty { color: var(--pending); font-weight: 600; }
+  .note.saved { color: var(--accent); font-weight: 700; }
   .note.failed { color: var(--warn); }
-  .receipt.dirty { border-color: var(--pending); box-shadow: inset 4px 0 0 var(--pending); }
-  .fields input.changed { border-color: var(--pending); background: color-mix(in srgb, var(--pending) 8%, transparent); }
+  .receipt.dirty { border-color: var(--pending); box-shadow: inset 0 3px 0 var(--pending); }
+  .fields input.changed { border-bottom-color: var(--pending); background: color-mix(in srgb, var(--pending) 9%, transparent); }
   .receipt.just-saved { animation: saved 1.8s ease-out; }
   @keyframes saved {
-    from { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+    from { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
     to { border-color: var(--line); box-shadow: 0 0 0 3px transparent; }
   }
-  .upload { display: none; margin-top: 10px; background: var(--card); border: 1px solid var(--line);
-            border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+  .upload { display: none; margin-top: 12px; background: var(--card); border: 1px solid var(--line);
+            border-radius: 2px; padding: 10px 12px; font-size: 14px; }
   .upload.active { display: block; }
   .upload-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-  .upload button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  .upload button { font: inherit; font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 3px; cursor: pointer;
                    border: 1px solid var(--line); background: transparent; color: var(--ink); }
-  .bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .bar { height: 4px; background: var(--line); margin-top: 8px; overflow: hidden; }
   .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
   .bar.indeterminate > div { width: 30%; animation: slide 1.2s ease-in-out infinite; }
   @keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
-  .conn { display: none; margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; font-size: 14px;
-          background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+  .conn { display: none; margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--warn); font-size: 14px;
+          background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--warn); }
   .conn.show { display: block; }
   .slow { color: var(--warn); }
   .tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .chip { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 13px; line-height: 1;
-          padding: 5px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent);
-          background: color-mix(in srgb, var(--accent) 10%, transparent); cursor: pointer; }
-  .chip .x { opacity: .7; }
+  .chips { display: contents; }
+  /* tags look like rubber stamps */
+  .chip { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 13px; font-weight: 650;
+          font-stretch: 87.5%; line-height: 1; padding: 5px 7px; border-radius: 3px; border: 1.5px solid var(--accent);
+          color: var(--accent); background: transparent; cursor: pointer; }
+  .chip:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .chip .x { opacity: .6; font-weight: 400; }
   .tag-entry { position: relative; flex: 1 1 120px; min-width: 120px; }
   .tag-entry input { width: 100%; font: inherit; font-size: 13px; color: var(--ink); background: transparent;
-                     border: 1px dashed var(--line); border-radius: 999px; padding: 5px 10px; }
-  .tag-entry input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-style: solid; }
+                     border: 1.5px dashed var(--line); border-radius: 3px; padding: 4px 8px; }
+  .tag-entry input:focus { outline: none; border: 1.5px solid var(--accent); }
   .suggest { display: none; position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0;
-             min-width: 180px; background: var(--card); border: 1px solid var(--line); border-radius: 8px;
-             box-shadow: 0 6px 18px rgb(0 0 0 / .15); padding: 4px; max-height: 240px; overflow-y: auto; }
+             min-width: 180px; background: var(--card); border: 1px solid var(--line); border-radius: 3px;
+             box-shadow: 0 8px 20px rgb(20 22 43 / .18); padding: 4px; max-height: 240px; overflow-y: auto; }
   .suggest.open { display: block; }
   .suggest button { display: flex; justify-content: space-between; width: 100%; text-align: left; font: inherit;
-                    font-size: 14px; padding: 7px 8px; border: 0; border-radius: 6px; background: transparent;
+                    font-size: 14px; padding: 7px 8px; border: 0; border-radius: 2px; background: transparent;
                     color: var(--ink); cursor: pointer; }
-  .suggest button.active, .suggest button:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .suggest button.active, .suggest button:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
   .suggest .count { color: var(--muted); font-size: 12px; }
   .lightbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0;
-              border: 0; background: #111; color: #eee; }
-  .lightbox::backdrop { background: rgb(0 0 0 / .6); }
+              border: 0; background: #101226; color: #e4e5f4; }
+  .lightbox::backdrop { background: rgb(16 18 38 / .6); }
   .lightbox[open] { display: flex; flex-direction: column; }
   .lb-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: 14px; }
-  .lb-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lb-bar button, .lb-bar a { font: inherit; font-size: 14px; color: #eee; background: rgb(255 255 255 / .12);
-                              border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; text-decoration: none; }
+  .lb-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+              font-family: var(--narrow); font-stretch: 75%; font-weight: 700; font-size: 20px; }
+  .lb-bar button, .lb-bar a { font: inherit; font-size: 14px; font-weight: 600; color: #e4e5f4; background: rgb(156 160 245 / .16);
+                              border: 0; border-radius: 3px; padding: 6px 10px; cursor: pointer; text-decoration: none; }
+  .lb-bar [hidden] { display: none; }
   .lb-bar .lb-close { font-size: 18px; line-height: 1; padding: 6px 11px; }
   /* flex + margin:auto centres the image when it fits and still lets every edge scroll into view when zoomed */
   .lb-body { flex: 1; min-height: 0; overflow: auto; display: flex; padding: 0 16px 16px; }
   .lb-body img { margin: auto; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
   .lb-body.zoomed img { max-width: none; max-height: none; cursor: zoom-out; }
   html:has(.lightbox[open]) { overflow: hidden; }  /* don't scroll the page behind the viewer */
-  .empty { text-align: center; color: var(--muted); padding: 32px 0; }
-  .empty button, .filter .clear { font: inherit; font-size: 13px; color: var(--accent); background: transparent;
-                                  border: 0; padding: 4px 6px; cursor: pointer; text-decoration: underline; }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; font-size: 16px; }
+  .empty button, .filter .clear { font: inherit; font-size: 14px; font-weight: 600; color: var(--accent); background: transparent;
+                                  border: 0; padding: 4px 6px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
   .filter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 2px 12px; font-size: 13px; }
   .filter[hidden] { display: none; }
-  .filter .label { color: var(--muted); margin-right: 2px; }
-  .fchip { font: inherit; font-size: 13px; line-height: 1; padding: 5px 9px; border-radius: 999px; cursor: pointer;
-           border: 1px solid var(--line); background: transparent; color: var(--ink); }
-  .fchip .count { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .filter .label { color: var(--muted); font-weight: 600; margin-right: 2px; }
+  .fchip { font: inherit; font-size: 13px; font-weight: 650; font-stretch: 87.5%; line-height: 1; padding: 5px 8px;
+           border-radius: 3px; cursor: pointer; border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
+           background: var(--card); color: var(--accent); }
+  .fchip .count { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 5px; }
   .fchip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  .fchip.on .count { color: inherit; opacity: .8; }
+  .fchip.on .count { color: inherit; opacity: .75; }
   .fchip.untagged { font-style: italic; }
-  .total { margin: 0 2px 12px; color: var(--muted); font-size: 13px; }
+  /* the running total, like the tape at the foot of an adding machine */
+  .total { margin: 4px 2px 14px; font-family: var(--narrow); font-stretch: 75%; font-weight: 700; font-size: 20px;
+           color: var(--ink); }
+  .total:empty { display: none; }
 
-  @media (max-width: 420px) {
-    .receipt { grid-template-columns: 84px 1fr; }
-    .thumb { width: 84px; height: 116px; }
-    .fields { grid-template-columns: 1fr; }
+  @media (max-width: 480px) {
+    h1 { font-size: 46px; }
+    .receipt { --stub-w: 96px; }
+    .stub { padding: 10px 12px 10px 10px; }
+    .serial { font-size: 18px; }
+    .thumb { width: 72px; height: 100px; }
+    .fields { grid-template-columns: 1fr; gap: 10px; padding: 12px 12px 12px 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .receipt.just-saved, .bar.indeterminate > div { animation: none; }
+    .bar > div { transition: none; }
   }
 </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>Receipt Scanner</h1>
+    <h1>Receipts</h1>
     <a href="/api/receipts.csv" id="csvLink">Export CSV</a>
   </header>
 
   <div class="add" id="addBtns">
     <label class="capture primary">
-      📷 Take photo
+      Take photo
       <input type="file" id="cameraInput" accept="image/*" capture="environment">
     </label>
     <label class="capture">
-      🖼️ Upload photo
+      Upload photo
       <input type="file" id="fileInput" accept="image/*,.heic,.heif" multiple>
     </label>
   </div>
@@ -194,7 +244,10 @@
 
 <template id="tpl">
   <div class="receipt">
-    <a class="thumb-link" target="_blank" rel="noopener"><img class="thumb" alt="receipt" loading="lazy" decoding="async"></a>
+    <div class="stub">
+      <span class="serial"></span>
+      <a class="thumb-link" target="_blank" rel="noopener"><img class="thumb" alt="receipt" loading="lazy" decoding="async"></a>
+    </div>
     <div class="fields">
       <label class="wide">Vendor <input name="vendor" autocomplete="off"></label>
       <label class="wide">Description <input name="description" autocomplete="off" placeholder="e.g. various hardware"></label>
@@ -317,7 +370,7 @@ function render(receipts) {
   const parts = Object.entries(byCur).map(([c, v]) => `${centsToStr(v)} ${c}`.trim());
   const count = filterActive() ? `${visible.length} of ${receipts.length}` : `${receipts.length}`;
   $("#summary").textContent = visible.length
-    ? `${count} receipt${receipts.length === 1 ? "" : "s"}` + (parts.length ? ` · total ${parts.join(" + ")}` : "")
+    ? `${count} receipt${receipts.length === 1 ? "" : "s"}` + (parts.length ? `, total ${parts.join(" + ")}` : "")
     : "";
   drawFilter();
   tickElapsed();
@@ -328,6 +381,7 @@ function card(r) {
   const showScan = r.use_scan && r.scan_url;
   const src = showScan ? r.scan_url : r.original_url;
   $(".thumb", el).src = showScan ? r.scan_thumb_url : r.original_thumb_url;
+  $(".serial", el).textContent = `No. ${String(r.id).padStart(4, "0")}`;
   $(".thumb-link", el).href = src;
   $(".thumb-link", el).onclick = e => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;  // let modified clicks open a tab
