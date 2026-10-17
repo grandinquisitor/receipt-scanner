@@ -14,9 +14,12 @@ Extract:
 - total: the final amount paid, including tax and tip, as a plain decimal string like "23.45" (null if not visible)
 - currency: ISO 4217 code such as "USD" or "EUR", inferred from symbols or location (null if unclear)
 - date: the transaction date as YYYY-MM-DD (null if not visible)
-- description: a short, general label for what was bought, a few words at most, e.g. "groceries",
-  "shipping supplies", "various hardware", "restaurant meal", "fuel". Don't itemize; summarize at whatever
-  level the receipt supports, and stay vague rather than guess at specifics. Use "unknown" if you can't tell.
+- description: a short phrase (a few words) saying what was bought, based on the line items rather than the
+  store. Be as specific as the item text supports: decode abbreviations and product codes into plain words,
+  e.g. "AMZBSC HDMI CBL 6FT" is "HDMI cable", "OATEY PVC CMNT 4OZ" is "PVC cement", and a charger plus
+  AA batteries is "phone charger and batteries". Don't list prices or quantities. Only fall back to a broader
+  label ("groceries", "various hardware", "restaurant meal") when there are too many unrelated items to
+  name, and use "unknown" if the items can't be read.
 - text_top: which edge of the image the top of the printed text faces: "top" if the text reads normally,
   "right" / "left" if the receipt lies sideways, "bottom" if it is upside down (null if unsure)
 
