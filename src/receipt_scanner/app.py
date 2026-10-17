@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -183,18 +183,19 @@ async def upload(background: BackgroundTasks, file: UploadFile = File(...)):
 
 
 @app.get("/api/receipts")
-def list_receipts(response: Response):
+def list_receipts(response: Response, tag: list[str] = Query(default=[]), untagged: bool = False):
     # Lets the browser measure elapsed extraction time without trusting the phone's clock.
     response.headers["X-Server-Time"] = utc_now()
-    return [public(r) for r in db.list()]
+    return [public(r) for r in db.list(tag, untagged)]
 
 
 @app.get("/api/receipts.csv")
-def export_csv():
+def export_csv(tag: list[str] = Query(default=[]), untagged: bool = False):
+    """CSV of the receipts; ?tag=a&tag=b keeps only receipts with all those tags, ?untagged=1 only untagged ones."""
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["id", "receipt_date", "vendor", "description", "total", "currency", "tags", "status", "created_at"])
-    for r in db.list():
+    for r in db.list(tag, untagged):
         total = f"{r['total_cents'] / 100:.2f}" if r["total_cents"] is not None else ""
         w.writerow([r["id"], r["receipt_date"] or "", r["vendor"] or "", r["description"] or "", total, r["currency"] or "", "; ".join(r["tags"]), r["status"], r["created_at"]])
     return StreamingResponse(

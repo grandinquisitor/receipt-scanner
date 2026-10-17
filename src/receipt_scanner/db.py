@@ -91,9 +91,21 @@ class DB:
             row = c.execute("SELECT * FROM receipts WHERE id = ?", (rid,)).fetchone()
             return self._with_tags(c, [dict(row)])[0] if row else None
 
-    def list(self) -> list[dict]:
+    def list(self, tags: list[str] = (), untagged: bool = False) -> list[dict]:
+        """All receipts, newest first; optionally only those carrying every one of `tags`,
+        or only those with no tags at all."""
+        where, params = "", []
+        names = list({t.strip().lower(): t.strip() for t in tags if t.strip()}.values())  # case-insensitive dedupe
+        if untagged:
+            where = "WHERE id NOT IN (SELECT receipt_id FROM receipt_tags)"
+        elif names:
+            where = (
+                "WHERE id IN (SELECT rt.receipt_id FROM receipt_tags rt JOIN tags t ON t.id = rt.tag_id "
+                f"WHERE t.name IN ({', '.join('?' * len(names))}) GROUP BY rt.receipt_id HAVING COUNT(*) = ?)"
+            )
+            params = [*names, len(names)]
         with self.conn() as c:
-            rows = c.execute("SELECT * FROM receipts ORDER BY id DESC").fetchall()
+            rows = c.execute(f"SELECT * FROM receipts {where} ORDER BY id DESC", params).fetchall()
             return self._with_tags(c, [dict(r) for r in rows])
 
     @staticmethod

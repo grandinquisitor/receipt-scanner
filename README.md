@@ -19,6 +19,10 @@ Each receipt can carry **tags** (e.g. "business", "home office"). Type in a rece
 from tags you've used before, most-used first. Tags are case-insensitive, and a tag disappears once no
 receipt uses it.
 
+Tap tags in the **Filter** bar above the list to show only receipts with all the selected tags (or
+"untagged" for receipts with none). The count and total above the list cover just the shown receipts, the
+filter is kept in the page address so it survives a reload or bookmark, and **Export CSV** exports what's shown.
+
 ## How it works
 
 1. **Image** (`imaging.py`): applies the EXIF rotation, converts to greyscale, and finds the receipt outline
@@ -61,7 +65,7 @@ Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 | Method | Path | |
 |---|---|---|
 | POST | `/api/receipts` | multipart `file`; returns the new row (`status: pending`) |
-| GET | `/api/receipts`, `/api/receipts/{id}` | list / fetch |
+| GET | `/api/receipts`, `/api/receipts/{id}` | list (optional `?tag=a&tag=b` for receipts with all those tags, or `?untagged=1`) / fetch |
 | PATCH | `/api/receipts/{id}` | `vendor`, `description`, `total_cents`, `currency`, `receipt_date`, `use_scan` |
 | POST | `/api/receipts/{id}/extract` | re-run extraction on the selected image |
 | POST | `/api/receipts/{id}/recrop` | re-run receipt detection + unwarping on the stored original |
@@ -71,4 +75,4 @@ Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 | DELETE | `/api/receipts/{id}/tags/{name}` | removes a tag from the receipt |
 | DELETE | `/api/receipts/{id}` | deletes the row and its images |
 | GET | `/api/receipts/{id}/image/{original\|scan}` | JPEG |
-| GET | `/api/receipts.csv` | export |
+| GET | `/api/receipts.csv` | export; takes the same `tag` / `untagged` filters |

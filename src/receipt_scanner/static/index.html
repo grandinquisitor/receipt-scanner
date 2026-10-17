@@ -111,6 +111,17 @@
   .lb-body.zoomed img { max-width: none; max-height: none; cursor: zoom-out; }
   html:has(.lightbox[open]) { overflow: hidden; }  /* don't scroll the page behind the viewer */
   .empty { text-align: center; color: var(--muted); padding: 32px 0; }
+  .empty button, .filter .clear { font: inherit; font-size: 13px; color: var(--accent); background: transparent;
+                                  border: 0; padding: 4px 6px; cursor: pointer; text-decoration: underline; }
+  .filter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 2px 12px; font-size: 13px; }
+  .filter[hidden] { display: none; }
+  .filter .label { color: var(--muted); margin-right: 2px; }
+  .fchip { font: inherit; font-size: 13px; line-height: 1; padding: 5px 9px; border-radius: 999px; cursor: pointer;
+           border: 1px solid var(--line); background: transparent; color: var(--ink); }
+  .fchip .count { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .fchip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .fchip.on .count { color: inherit; opacity: .8; }
+  .fchip.untagged { font-style: italic; }
   .total { margin: 0 2px 12px; color: var(--muted); font-size: 13px; }
 
   @media (max-width: 420px) {
@@ -124,7 +135,7 @@
 <main>
   <header>
     <h1>Receipt Scanner</h1>
-    <a href="/api/receipts.csv">Export CSV</a>
+    <a href="/api/receipts.csv" id="csvLink">Export CSV</a>
   </header>
 
   <div class="add" id="addBtns">
@@ -145,6 +156,7 @@
   <div id="msg"></div>
   <div class="conn" id="conn"></div>
 
+  <div class="filter" id="filter" hidden></div>
   <div class="total" id="summary"></div>
   <div id="list"></div>
 </main>
@@ -205,6 +217,7 @@ const MAX_UPLOAD_EDGE = 2400;      // server keeps 1600px anyway; shrinking firs
 let pollTimer = null, pollDelay = 1500, clockOffset = 0;  // clockOffset = server time - local time
 let allTags = [];        // [{name, count}], most-used first; feeds tag suggestions
 let refocusTagFor = null;  // receipt id whose tag input should keep focus after a re-render
+let lastReceipts = null; // latest list from the server, so filter changes re-render without a fetch
 
 function netError(e) {
   if (e.name === "TimeoutError" || e.name === "AbortError") return new Error("the server took too long to answer");
@@ -250,22 +263,33 @@ function render(receipts) {
   const ids = new Set(receipts.map(r => r.id));
   for (const id of rendered.keys()) if (!ids.has(id)) rendered.delete(id);
   list.replaceChildren(...next);
+  const visible = receipts.filter(matchesFilter);
+  for (const r of receipts) rendered.get(r.id).el.hidden = !matchesFilter(r);
   if (refocusTagFor != null) {
     const input = rendered.get(refocusTagFor) && $(".tag-input", rendered.get(refocusTagFor).el);
     refocusTagFor = null;
     input?.focus();
   }
   if (!receipts.length) list.innerHTML = `<div class="empty">No receipts yet.</div>`;
+  else if (!visible.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.innerHTML = `No receipts match this filter. <button type="button">Show all</button>`;
+    $("button", empty).onclick = () => setFilter([], false);
+    list.append(empty);
+  }
 
   const byCur = {};
-  for (const r of receipts) if (r.total_cents != null) {
+  for (const r of visible) if (r.total_cents != null) {
     const c = r.currency || "";
     byCur[c] = (byCur[c] || 0) + r.total_cents;
   }
   const parts = Object.entries(byCur).map(([c, v]) => `${centsToStr(v)} ${c}`.trim());
-  $("#summary").textContent = receipts.length
-    ? `${receipts.length} receipt${receipts.length === 1 ? "" : "s"}` + (parts.length ? ` · total ${parts.join(" + ")}` : "")
+  const count = filterActive() ? `${visible.length} of ${receipts.length}` : `${receipts.length}`;
+  $("#summary").textContent = visible.length
+    ? `${count} receipt${receipts.length === 1 ? "" : "s"}` + (parts.length ? ` · total ${parts.join(" + ")}` : "")
     : "";
+  drawFilter();
   tickElapsed();
 }
 
@@ -352,6 +376,78 @@ function tickElapsed() {
   }
 }
 setInterval(tickElapsed, 1000);
+
+// ---------- tag filter ----------
+// Selecting several tags shows receipts that have all of them; "untagged" shows receipts with none.
+// The filter lives in the page URL (?tag=a&tag=b or ?untagged=1), so reloads and bookmarks keep it.
+
+let filterTags = [], filterUntagged = false;
+{
+  const q = new URLSearchParams(location.search);
+  filterTags = q.getAll("tag").filter(Boolean);
+  filterUntagged = q.has("untagged") && !filterTags.length;
+}
+
+const filterActive = () => filterUntagged || filterTags.length > 0;
+
+function matchesFilter(r) {
+  if (filterUntagged) return r.tags.length === 0;
+  const have = new Set(r.tags.map(t => t.toLowerCase()));
+  return filterTags.every(t => have.has(t.toLowerCase()));
+}
+
+function setFilter(tags, untagged) {
+  filterTags = tags;
+  filterUntagged = untagged;
+  const q = new URLSearchParams();
+  for (const t of tags) q.append("tag", t);
+  if (untagged) q.set("untagged", "1");
+  const qs = q.toString() ? `?${q}` : "";
+  history.replaceState(null, "", location.pathname + qs);
+  $("#csvLink").href = `/api/receipts.csv${qs}`;  // export what's on screen
+  if (lastReceipts) render(lastReceipts);
+}
+
+function drawFilter() {
+  const bar = $("#filter");
+  const on = new Set(filterTags.map(t => t.toLowerCase()));
+  // A selected tag can stop existing (removed from its last receipt); keep its chip so the filter stays visible.
+  const tags = [...allTags];
+  for (const t of filterTags) if (!tags.some(a => a.name.toLowerCase() === t.toLowerCase())) tags.push({name: t, count: 0});
+  const chip = (label, count, selected, onclick) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "fchip" + (selected ? " on" : "");
+    b.setAttribute("aria-pressed", selected);
+    b.innerHTML = `<span></span><span class="count"></span>`;
+    b.firstChild.textContent = label;
+    b.lastChild.textContent = count;
+    b.onclick = onclick;
+    return b;
+  };
+  const items = tags.map(t => chip(t.name, t.count, on.has(t.name.toLowerCase()), () =>
+    setFilter(on.has(t.name.toLowerCase()) ? filterTags.filter(x => x.toLowerCase() !== t.name.toLowerCase())
+                                           : [...filterTags, t.name], false)));
+  const untaggedCount = (lastReceipts || []).filter(r => !r.tags.length).length;
+  if (untaggedCount || filterUntagged) {
+    const u = chip("untagged", untaggedCount, filterUntagged, () => setFilter([], !filterUntagged));
+    u.classList.add("untagged");
+    items.push(u);
+  }
+  if (filterActive()) {
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "clear";
+    clear.textContent = "Clear";
+    clear.onclick = () => setFilter([], false);
+    items.push(clear);
+  }
+  const label = document.createElement("span");
+  label.className = "label";
+  label.textContent = "Filter:";
+  bar.replaceChildren(label, ...items);
+  bar.hidden = !tags.length && !filterActive();  // nothing to filter by until some receipt has a tag
+}
 
 // ---------- image viewer ----------
 
@@ -485,6 +581,7 @@ async function load() {
   conn.classList.remove("show");
   pollDelay = 1500;
   try { allTags = await api("/api/tags"); } catch {}  // suggestions are optional; keep the old list on failure
+  lastReceipts = receipts;
   render(receipts);
   if (receipts.some(r => r.status === "pending")) pollTimer = setTimeout(load, pollDelay);
 }
@@ -557,6 +654,7 @@ async function uploadFiles(files) {
   if (addBtns.classList.contains("busy")) { msg.textContent = "Wait for the current upload to finish."; return; }
   addBtns.classList.add("busy");
   msg.textContent = "";
+  if (filterActive()) setFilter([], false);  // new receipts are untagged; don't let the filter hide them
   cancelled = false;
   const failures = [];
   let done = 0;
@@ -612,6 +710,7 @@ document.addEventListener("drop", e => {
   uploadFiles(e.dataTransfer.files);
 });
 
+setFilter(filterTags, filterUntagged);  // sync the URL and CSV link with the filter read from the URL
 load();
 </script>
 </body>
