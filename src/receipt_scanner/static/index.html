@@ -42,6 +42,7 @@
              border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
   /* As a grid item the link would stretch to the card's full height, making the space under the image clickable. */
   .thumb-link { align-self: start; line-height: 0; }
+  .receipt[hidden] { display: none; }  /* hidden by the tag filter; display:grid above would override it */
   .thumb { width: 110px; height: 150px; object-fit: cover; object-position: top; border-radius: 6px;
            border: 1px solid var(--line); background: var(--line); cursor: zoom-in; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-content: start; }
@@ -559,7 +560,10 @@ function openLightbox(r, kind) {
   alt.hidden = !r.scan_url;
   alt.textContent = kind === "scan" ? "Show uncropped" : "Show cropped";
   alt.onclick = () => openLightbox(r, kind === "scan" ? "original" : "scan");
-  if (!lb.open) lb.showModal();
+  if (!lb.open) {
+    lb.showModal();
+    history.pushState({lightbox: true}, "");  // so the back button (or swipe) closes the viewer
+  }
 }
 
 // Tap the image to toggle fit-to-screen / full resolution, keeping the tapped spot in view.
@@ -572,9 +576,19 @@ lbImg.addEventListener("click", e => {
     lbBody.scrollTop = fy * lbImg.offsetHeight - lbBody.clientHeight / 2;
   }
 });
-lbBody.addEventListener("click", e => { if (e.target === lbBody) lb.close(); });  // tap outside the image
-$(".lb-close", lb).onclick = () => lb.close();
-lb.addEventListener("close", () => { lbImg.removeAttribute("src"); });
+// Every way of closing goes through here, so our history entry is always dropped: ✕, tap outside,
+// Escape, and (on Android) the back gesture, which the browser delivers to the dialog as "cancel".
+function closeLightbox({fromHistory = false} = {}) {
+  if (!lb.open) return;
+  lb.close();
+  lbImg.removeAttribute("src");
+  if (!fromHistory && history.state?.lightbox) history.back();
+}
+lbBody.addEventListener("click", e => { if (e.target === lbBody) closeLightbox(); });  // tap outside the image
+$(".lb-close", lb).onclick = () => closeLightbox();
+lb.addEventListener("cancel", e => { e.preventDefault(); closeLightbox(); });
+window.addEventListener("popstate", () => closeLightbox({fromHistory: true}));  // back button while viewing
+if (history.state?.lightbox) history.replaceState(null, "");  // reloaded while the viewer was open
 
 // ---------- tags ----------
 
