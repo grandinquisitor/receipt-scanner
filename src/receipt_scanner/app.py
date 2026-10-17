@@ -187,10 +187,10 @@ def list_receipts(response: Response):
 def export_csv():
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["id", "receipt_date", "vendor", "description", "total", "currency", "status", "created_at"])
+    w.writerow(["id", "receipt_date", "vendor", "description", "total", "currency", "tags", "status", "created_at"])
     for r in db.list():
         total = f"{r['total_cents'] / 100:.2f}" if r["total_cents"] is not None else ""
-        w.writerow([r["id"], r["receipt_date"] or "", r["vendor"] or "", r["description"] or "", total, r["currency"] or "", r["status"], r["created_at"]])
+        w.writerow([r["id"], r["receipt_date"] or "", r["vendor"] or "", r["description"] or "", total, r["currency"] or "", "; ".join(r["tags"]), r["status"], r["created_at"]])
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",
@@ -229,6 +229,33 @@ def re_extract(rid: int, background: BackgroundTasks):
         raise HTTPException(409, "extraction already running")
     db.update(rid, status="pending", error=None, extract_started_at=utc_now())
     background.add_task(run_extraction, rid)
+    return public(db.get(rid))
+
+
+@app.get("/api/tags")
+def list_tags():
+    """All tags in use with their receipt counts, most-used first (for autocomplete)."""
+    return db.all_tags()
+
+
+class TagIn(BaseModel):
+    name: str
+
+
+@app.post("/api/receipts/{rid}/tags")
+def add_tag(rid: int, tag: TagIn):
+    get_or_404(rid)
+    try:
+        db.add_tag(rid, tag.name)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return public(db.get(rid))
+
+
+@app.delete("/api/receipts/{rid}/tags/{name}")
+def remove_tag(rid: int, name: str):
+    get_or_404(rid)
+    db.remove_tag(rid, name)
     return public(db.get(rid))
 
 

@@ -6,6 +6,9 @@ import logging
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
+from pillow_heif import register_heif_opener
+
+register_heif_opener()  # iPhone photos uploaded from a computer are often HEIC
 
 DETECT_EDGE = 1000   # long edge used for contour detection
 MAX_EDGE = 1600      # long edge of stored / sent images

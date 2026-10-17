@@ -23,11 +23,19 @@
   h1 { font-size: 20px; margin: 0; }
   header a { color: var(--muted); font-size: 13px; }
 
-  .capture { display: block; width: 100%; padding: 22px; border: 2px dashed var(--accent); border-radius: 14px;
-             background: transparent; color: var(--accent); font-size: 18px; font-weight: 600; cursor: pointer;
+  .add { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .add.busy { opacity: .6; pointer-events: none; }
+  .capture { display: block; padding: 22px 12px; border: 2px dashed var(--accent); border-radius: 14px;
+             background: transparent; color: var(--accent); font-size: 17px; font-weight: 600; cursor: pointer;
              text-align: center; }
+  .capture.primary { background: var(--accent); color: var(--accent-ink); border-style: solid; }
   .capture input { display: none; }
-  .capture.busy { opacity: .6; pointer-events: none; }
+  .drop-hint { margin: 6px 2px 0; font-size: 12px; color: var(--muted); text-align: center; }
+  body.dragging main::after { content: "Drop photos to upload"; position: fixed; inset: 12px; z-index: 20;
+             display: grid; place-items: center; border: 3px dashed var(--accent); border-radius: 18px;
+             background: color-mix(in srgb, var(--bg) 85%, transparent); color: var(--accent);
+             font-size: 22px; font-weight: 600; pointer-events: none; }
+  @media (hover: none) { .drop-hint { display: none; } }  /* touch devices can't drag files in */
   #msg { min-height: 1.4em; margin: 8px 2px 16px; color: var(--warn); font-size: 14px; }
 
   .receipt { display: grid; grid-template-columns: 110px 1fr; gap: 14px; background: var(--card);
@@ -66,6 +74,24 @@
           background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
   .conn.show { display: block; }
   .slow { color: var(--warn); }
+  .tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: 13px; line-height: 1;
+          padding: 5px 8px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent);
+          background: color-mix(in srgb, var(--accent) 10%, transparent); cursor: pointer; }
+  .chip .x { opacity: .7; }
+  .tag-entry { position: relative; flex: 1 1 120px; min-width: 120px; }
+  .tag-entry input { width: 100%; font: inherit; font-size: 13px; color: var(--ink); background: transparent;
+                     border: 1px dashed var(--line); border-radius: 999px; padding: 5px 10px; }
+  .tag-entry input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-style: solid; }
+  .suggest { display: none; position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0;
+             min-width: 180px; background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+             box-shadow: 0 6px 18px rgb(0 0 0 / .15); padding: 4px; max-height: 240px; overflow-y: auto; }
+  .suggest.open { display: block; }
+  .suggest button { display: flex; justify-content: space-between; width: 100%; text-align: left; font: inherit;
+                    font-size: 14px; padding: 7px 8px; border: 0; border-radius: 6px; background: transparent;
+                    color: var(--ink); cursor: pointer; }
+  .suggest button.active, .suggest button:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .suggest .count { color: var(--muted); font-size: 12px; }
   .empty { text-align: center; color: var(--muted); padding: 32px 0; }
   .total { margin: 0 2px 12px; color: var(--muted); font-size: 13px; }
 
@@ -83,10 +109,17 @@
     <a href="/api/receipts.csv">Export CSV</a>
   </header>
 
-  <label class="capture" id="captureBtn">
-    📷 Take a photo of a receipt
-    <input type="file" id="file" accept="image/*" capture="environment">
-  </label>
+  <div class="add" id="addBtns">
+    <label class="capture primary">
+      📷 Take photo
+      <input type="file" id="cameraInput" accept="image/*" capture="environment">
+    </label>
+    <label class="capture">
+      🖼️ Upload photo
+      <input type="file" id="fileInput" accept="image/*,.heic,.heif" multiple>
+    </label>
+  </div>
+  <p class="drop-hint">…or drag photos onto this page</p>
   <div class="upload" id="upload">
     <div class="upload-row"><span id="uploadLabel"></span><button id="cancelBtn" type="button">Cancel</button></div>
     <div class="bar" id="bar"><div id="barFill"></div></div>
@@ -107,6 +140,12 @@
       <label>Date <input name="receipt_date" type="date"></label>
       <label>Total <input name="total" inputmode="decimal" autocomplete="off"></label>
       <label>Currency <input name="currency" maxlength="3" autocomplete="off"></label>
+      <div class="tags"><span class="chips"></span>
+        <div class="tag-entry">
+          <input class="tag-input" placeholder="+ tag" autocomplete="off" autocapitalize="none" enterkeyhint="done" maxlength="40">
+          <div class="suggest"></div>
+        </div>
+      </div>
       <div class="meta"><span class="status"></span><span class="crop"></span><span class="extractor"></span><span class="created"></span></div>
       <div class="err"></div>
       <div class="actions">
@@ -131,6 +170,8 @@ const SLOW_EXTRACT_S = 180;        // matches the server's STALE_AFTER_S, when R
 const MAX_UPLOAD_EDGE = 2400;      // server keeps 1600px anyway; shrinking first makes uploads fast
 
 let pollTimer = null, pollDelay = 1500, clockOffset = 0;  // clockOffset = server time - local time
+let allTags = [];        // [{name, count}], most-used first; feeds tag suggestions
+let refocusTagFor = null;  // receipt id whose tag input should keep focus after a re-render
 
 function netError(e) {
   if (e.name === "TimeoutError" || e.name === "AbortError") return new Error("the server took too long to answer");
@@ -176,6 +217,11 @@ function render(receipts) {
   const ids = new Set(receipts.map(r => r.id));
   for (const id of rendered.keys()) if (!ids.has(id)) rendered.delete(id);
   list.replaceChildren(...next);
+  if (refocusTagFor != null) {
+    const input = rendered.get(refocusTagFor) && $(".tag-input", rendered.get(refocusTagFor).el);
+    refocusTagFor = null;
+    input?.focus();
+  }
   if (!receipts.length) list.innerHTML = `<div class="empty">No receipts yet.</div>`;
 
   const byCur = {};
@@ -230,6 +276,7 @@ function card(r) {
   $(".crop", el).textContent = r.scan_url
     ? (showScan ? "cropped & straightened" : "showing uncropped")
     : "not cropped: receipt edge not found";
+  setupTags(el, r);
   $(".rotate", el).onclick = () => act(() => api(`/api/receipts/${r.id}/rotate`, {method: "POST"}));
   $(".recrop", el).onclick = () => act(() => api(`/api/receipts/${r.id}/recrop`, {method: "POST"}), "Re-cropped.");
 
@@ -268,6 +315,80 @@ function tickElapsed() {
 }
 setInterval(tickElapsed, 1000);
 
+// ---------- tags ----------
+
+function setupTags(el, r) {
+  const chips = $(".chips", el), input = $(".tag-input", el), box = $(".suggest", el);
+  for (const name of r.tags) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip";
+    chip.title = `Remove tag "${name}"`;
+    chip.innerHTML = `<span></span><span class="x" aria-hidden="true">×</span>`;
+    chip.firstChild.textContent = name;
+    chip.onclick = () => act(() => api(`/api/receipts/${r.id}/tags/${encodeURIComponent(name)}`, {method: "DELETE"}));
+    chips.append(chip);
+  }
+
+  let options = [], active = -1;
+  const have = new Set(r.tags.map(t => t.toLowerCase()));
+
+  function show() {
+    const q = input.value.trim().toLowerCase();
+    const matches = allTags.filter(t => !have.has(t.name.toLowerCase()) && t.name.toLowerCase().includes(q));
+    matches.sort((a, b) => (b.name.toLowerCase().startsWith(q) - a.name.toLowerCase().startsWith(q)) || b.count - a.count);
+    options = matches.slice(0, 8).map(t => ({name: t.name, label: t.name, count: t.count}));
+    const typed = input.value.trim();
+    if (typed && !allTags.some(t => t.name.toLowerCase() === typed.toLowerCase()) && !have.has(typed.toLowerCase())) {
+      options.push({name: typed, label: `Add new tag "${typed}"`});
+    }
+    active = q && options.length ? 0 : -1;
+    draw();
+  }
+  function draw() {
+    box.replaceChildren(...options.map((o, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = i === active ? "active" : "";
+      b.innerHTML = `<span></span><span class="count"></span>`;
+      b.firstChild.textContent = o.label;
+      b.lastChild.textContent = o.count ? `${o.count}` : "";
+      b.onpointerdown = e => e.preventDefault();  // keep focus in the input
+      b.onclick = () => add(o.name);
+      return b;
+    }));
+    box.classList.toggle("open", options.length > 0);
+  }
+  function add(name) {
+    name = name.trim();
+    if (!name) return;
+    if (have.has(name.toLowerCase())) { input.value = ""; return show(); }
+    refocusTagFor = r.id;
+    act(() => api(`/api/receipts/${r.id}/tags`, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name}),
+    }));
+  }
+
+  input.addEventListener("focus", show);
+  input.addEventListener("input", show);
+  input.addEventListener("blur", () => box.classList.remove("open"));
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!options.length) return;
+      e.preventDefault();
+      active = (active + (e.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+      draw();
+    } else if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      add(active >= 0 ? options[active].name : input.value);
+    } else if (e.key === "Escape") {
+      box.classList.remove("open");
+    } else if (e.key === "Backspace" && !input.value && r.tags.length) {
+      chips.lastChild.click();  // backspace on an empty input removes the last tag
+    }
+  });
+}
+
 async function act(fn, ok = "") {
   msg.textContent = "";
   try { await fn(); msg.textContent = ok; await load(); }
@@ -294,6 +415,7 @@ async function load() {
   }
   conn.classList.remove("show");
   pollDelay = 1500;
+  try { allTags = await api("/api/tags"); } catch {}  // suggestions are optional; keep the old list on failure
   render(receipts);
   if (receipts.some(r => r.status === "pending")) pollTimer = setTimeout(load, pollDelay);
 }
@@ -301,12 +423,12 @@ async function load() {
 // ---------- upload ----------
 
 const upload = $("#upload"), uploadLabel = $("#uploadLabel"), bar = $("#bar"), barFill = $("#barFill");
-const captureBtn = $("#captureBtn"), fileInput = $("#file");
-let currentXhr = null, cancelled = false;
+const addBtns = $("#addBtns");
+let currentXhr = null, cancelled = false, batchPrefix = "";  // batchPrefix: "Photo 2 of 3 · " for multi-uploads
 
 function showStage(text, fraction = null) {
   upload.classList.add("active");
-  uploadLabel.textContent = text;
+  uploadLabel.textContent = batchPrefix + text;
   bar.classList.toggle("indeterminate", fraction == null);
   barFill.style.width = fraction == null ? "" : `${Math.round(fraction * 100)}%`;
 }
@@ -356,28 +478,69 @@ function send(blob) {
 
 $("#cancelBtn").onclick = () => { cancelled = true; currentXhr?.abort(); };
 
-fileInput.addEventListener("change", async e => {
-  const file = e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  captureBtn.classList.add("busy");
+function isImage(f) { return f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name); }
+
+// Upload one or more photos in turn; one failure doesn't stop the rest.
+async function uploadFiles(files) {
+  const skipped = [...files].filter(f => !isImage(f)).map(f => f.name);
+  files = [...files].filter(isImage);
+  if (!files.length) { msg.textContent = "That doesn't look like an image."; return; }
+  if (addBtns.classList.contains("busy")) { msg.textContent = "Wait for the current upload to finish."; return; }
+  addBtns.classList.add("busy");
   msg.textContent = "";
   cancelled = false;
+  const failures = [];
+  let done = 0;
   try {
-    showStage(`Preparing photo (${fmtBytes(file.size)})…`);
-    const blob = await shrink(file);
-    if (cancelled) throw new Error("cancelled");
-    await send(blob);
-    upload.classList.remove("active");
-    msg.textContent = blob === file ? "" : `Uploaded (shrunk ${fmtBytes(file.size)} → ${fmtBytes(blob.size)}).`;
-    await load();
-  } catch (err) {
-    upload.classList.remove("active");
-    msg.textContent = err.message === "cancelled" ? "Upload cancelled." : `Upload failed: ${err.message}`;
+    for (const [i, file] of files.entries()) {
+      if (cancelled) break;
+      batchPrefix = files.length > 1 ? `Photo ${i + 1} of ${files.length} · ` : "";
+      try {
+        showStage(`Preparing ${file.name || "photo"} (${fmtBytes(file.size)})…`);
+        const blob = await shrink(file);
+        if (cancelled) throw new Error("cancelled");
+        await send(blob);
+        done++;
+        load();  // show it while the rest upload
+      } catch (err) {
+        if (err.message === "cancelled") break;
+        failures.push(`${file.name || "photo"}: ${err.message}`);
+      }
+    }
   } finally {
+    upload.classList.remove("active");
     currentXhr = null;
-    captureBtn.classList.remove("busy");
+    batchPrefix = "";
+    addBtns.classList.remove("busy");
   }
+  const parts = [];
+  if (skipped.length) parts.push(`Skipped ${skipped.join(", ")} (not an image).`);
+  if (cancelled) parts.push(`Upload cancelled${done ? ` after ${done} photo${done === 1 ? "" : "s"}` : ""}.`);
+  if (failures.length) parts.push(`Upload failed for ${failures.join("; ")}`);
+  msg.textContent = parts.join(" ");
+  await load();
+}
+
+for (const input of [$("#cameraInput"), $("#fileInput")]) {
+  input.addEventListener("change", e => {
+    const files = [...e.target.files];
+    e.target.value = "";
+    if (files.length) uploadFiles(files);
+  });
+}
+
+// Drag and drop (desktop)
+let dragDepth = 0;
+const hasFiles = e => [...(e.dataTransfer?.types || [])].includes("Files");
+document.addEventListener("dragenter", e => { if (hasFiles(e)) { dragDepth++; document.body.classList.add("dragging"); } });
+document.addEventListener("dragleave", e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dragging"); } });
+document.addEventListener("dragover", e => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener("drop", e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove("dragging");
+  uploadFiles(e.dataTransfer.files);
 });
 
 load();

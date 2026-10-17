@@ -11,8 +11,13 @@ uv run receipt-scanner          # serves on http://0.0.0.0:8000
 
 Settings are read from `.env`, which git ignores. Any variable already set in your shell overrides the file.
 
-Open `http://<your-computer's-LAN-IP>:8000` on your phone and tap **Take a photo**. The upload uses a plain
-`<input capture>`, so it works over plain HTTP; no certificate is needed.
+Open `http://<your-computer's-LAN-IP>:8000` on your phone and tap **Take photo**, or **Upload photo** to pick
+one or more existing photos (HEIC works too). On a computer you can also drag photos onto the page. Both use
+plain file inputs, so it works over plain HTTP; no certificate is needed.
+
+Each receipt can carry **tags** (e.g. "business", "home office"). Type in a receipt's tag box for suggestions
+from tags you've used before, most-used first. Tags are case-insensitive, and a tag disappears once no
+receipt uses it.
 
 ## How it works
 
@@ -60,6 +65,9 @@ Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 | POST | `/api/receipts/{id}/extract` | re-run extraction on the selected image |
 | POST | `/api/receipts/{id}/recrop` | re-run receipt detection + unwarping on the stored original |
 | POST | `/api/receipts/{id}/rotate` | rotate the stored images 90° clockwise |
+| GET | `/api/tags` | every tag in use with its receipt count, most-used first |
+| POST | `/api/receipts/{id}/tags` | JSON `{"name": ...}`; adds a tag (created if new) |
+| DELETE | `/api/receipts/{id}/tags/{name}` | removes a tag from the receipt |
 | DELETE | `/api/receipts/{id}` | deletes the row and its images |
 | GET | `/api/receipts/{id}/image/{original\|scan}` | JPEG |
 | GET | `/api/receipts.csv` | export |
