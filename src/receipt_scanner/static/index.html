@@ -40,6 +40,8 @@
 
   .receipt { display: grid; grid-template-columns: 110px 1fr; gap: 14px; background: var(--card);
              border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  /* As a grid item the link would stretch to the card's full height, making the space under the image clickable. */
+  .thumb-link { align-self: start; line-height: 0; }
   .thumb { width: 110px; height: 150px; object-fit: cover; object-position: top; border-radius: 6px;
            border: 1px solid var(--line); background: var(--line); cursor: zoom-in; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-content: start; }
