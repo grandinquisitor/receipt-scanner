@@ -12,7 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -159,6 +159,11 @@ def index():
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():  # browsers ask for this path on their own
     return FileResponse(STATIC_DIR / "icons" / "favicon.ico", media_type="image/x-icon")
+
+
+@app.get("/robots.txt", include_in_schema=False, response_class=PlainTextResponse)
+def robots():  # a private app: ask crawlers not to index anything, should one ever reach it
+    return "User-agent: *\nDisallow: /\n"
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)
