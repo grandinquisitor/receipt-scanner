@@ -2,6 +2,9 @@
 name = "receipt-scanner"
 version = "0.1.0"
 description = "Snap a receipt, extract total/date/vendor with an AI model, store in SQLite"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Nicholas Pisarro" }
 ]

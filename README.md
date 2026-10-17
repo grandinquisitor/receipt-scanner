@@ -1,6 +1,21 @@
 # Receipt Scanner
 
-Snap a photo of a receipt from your phone. The app saves it as greyscale, finds the receipt and straightens it, has an AI model read the **vendor, total and date**, and stores everything in SQLite.
+A small self-hosted web app for keeping receipts. Snap a photo on your phone (or upload one), and it:
+
+- saves it as greyscale, finds the receipt in the photo, crops and straightens it, and flattens curls and
+  creases with a neural unwarping model;
+- has an AI model read the **vendor, total, date** and a short **description** of what was bought, and
+  turns sideways photos upright;
+- stores everything in SQLite, with editable fields, **tags**, tag filtering and CSV export.
+
+It runs on your own computer; you use it from your phone's browser on the same network.
+
+## Requirements
+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs the right Python (3.13) and
+  all dependencies on first run. Plain pip works too: `pip install -e .`, then `receipt-scanner`.
+- An [Anthropic API key](https://console.anthropic.com/), or a local [Ollama](https://ollama.com/) vision
+  model (see [Choosing an extractor](#choosing-an-extractor)).
 
 ## Run
 
@@ -60,6 +75,17 @@ Use **Re-crop** on a receipt to rerun detection and unwarping on its stored phot
 
 Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 
+## Security and privacy
+
+- **There is no login.** Anyone who can reach the server can see, edit and delete every receipt. By default
+  it listens on all network interfaces (`HOST=0.0.0.0`) so your phone can reach it over your home network.
+  Only run it on a network you trust, and don't expose it to the internet (no port forwarding). Set
+  `HOST=127.0.0.1` to allow only the computer it runs on.
+- **Receipt photos go to Anthropic** when the `anthropic` extractor is used (the default). Use `ollama` to
+  keep everything on your machine.
+- Your data lives in `data/` (database, photos, downloaded model) and your key in `.env`; both are ignored
+  by git. Back up `data/` if you care about the receipts.
+
 ## API
 
 | Method | Path | |
@@ -75,4 +101,9 @@ Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 | DELETE | `/api/receipts/{id}/tags/{name}` | removes a tag from the receipt |
 | DELETE | `/api/receipts/{id}` | deletes the row and its images |
 | GET | `/api/receipts/{id}/image/{original\|scan}` | JPEG |
+| GET | `/api/receipts/{id}/thumb/{original\|scan}` | small JPEG for the list |
 | GET | `/api/receipts.csv` | export; takes the same `tag` / `untagged` filters |
+
+## License
+
+[MIT](LICENSE). The UVDoc model it downloads is also MIT-licensed.
