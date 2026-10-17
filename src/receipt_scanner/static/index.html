@@ -92,6 +92,20 @@
                     color: var(--ink); cursor: pointer; }
   .suggest button.active, .suggest button:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
   .suggest .count { color: var(--muted); font-size: 12px; }
+  .lightbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0;
+              border: 0; background: #111; color: #eee; }
+  .lightbox::backdrop { background: rgb(0 0 0 / .6); }
+  .lightbox[open] { display: flex; flex-direction: column; }
+  .lb-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: 14px; }
+  .lb-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-bar button, .lb-bar a { font: inherit; font-size: 14px; color: #eee; background: rgb(255 255 255 / .12);
+                              border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; text-decoration: none; }
+  .lb-bar .lb-close { font-size: 18px; line-height: 1; padding: 6px 11px; }
+  /* flex + margin:auto centres the image when it fits and still lets every edge scroll into view when zoomed */
+  .lb-body { flex: 1; min-height: 0; overflow: auto; display: flex; padding: 0 16px 16px; }
+  .lb-body img { margin: auto; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
+  .lb-body.zoomed img { max-width: none; max-height: none; cursor: zoom-out; }
+  html:has(.lightbox[open]) { overflow: hidden; }  /* don't scroll the page behind the viewer */
   .empty { text-align: center; color: var(--muted); padding: 32px 0; }
   .total { margin: 0 2px 12px; color: var(--muted); font-size: 13px; }
 
@@ -130,6 +144,16 @@
   <div class="total" id="summary"></div>
   <div id="list"></div>
 </main>
+
+<dialog class="lightbox" id="lightbox" aria-label="Receipt image">
+  <div class="lb-bar">
+    <span class="lb-title"></span>
+    <button type="button" class="lb-alt"></button>
+    <a class="lb-open" target="_blank" rel="noopener">Open in new tab</a>
+    <button type="button" class="lb-close" aria-label="Close">✕</button>
+  </div>
+  <div class="lb-body"><img alt="receipt"></div>
+</dialog>
 
 <template id="tpl">
   <div class="receipt">
@@ -242,6 +266,11 @@ function card(r) {
   const src = showScan ? r.scan_url : r.original_url;
   $(".thumb", el).src = src;
   $(".thumb-link", el).href = src;
+  $(".thumb-link", el).onclick = e => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;  // let modified clicks open a tab
+    e.preventDefault();
+    openLightbox(r, showScan ? "scan" : "original");
+  };
 
   const f = name => $(`input[name=${name}]`, el);
   f("vendor").value = r.vendor ?? "";
@@ -314,6 +343,37 @@ function tickElapsed() {
   }
 }
 setInterval(tickElapsed, 1000);
+
+// ---------- image viewer ----------
+
+const lb = $("#lightbox"), lbBody = $(".lb-body", lb), lbImg = $(".lb-body img", lb);
+
+function openLightbox(r, kind) {
+  const url = kind === "scan" ? r.scan_url : r.original_url;
+  lbBody.classList.remove("zoomed");
+  lbImg.src = url;
+  $(".lb-open", lb).href = url;
+  $(".lb-title", lb).textContent = [r.vendor, r.receipt_date].filter(Boolean).join(" · ") || "Receipt";
+  const alt = $(".lb-alt", lb);
+  alt.hidden = !r.scan_url;
+  alt.textContent = kind === "scan" ? "Show uncropped" : "Show cropped";
+  alt.onclick = () => openLightbox(r, kind === "scan" ? "original" : "scan");
+  if (!lb.open) lb.showModal();
+}
+
+// Tap the image to toggle fit-to-screen / full resolution, keeping the tapped spot in view.
+lbImg.addEventListener("click", e => {
+  const rect = lbImg.getBoundingClientRect();
+  const fx = (e.clientX - rect.left) / rect.width, fy = (e.clientY - rect.top) / rect.height;
+  const zoomed = lbBody.classList.toggle("zoomed");
+  if (zoomed) {
+    lbBody.scrollLeft = fx * lbImg.offsetWidth - lbBody.clientWidth / 2;
+    lbBody.scrollTop = fy * lbImg.offsetHeight - lbBody.clientHeight / 2;
+  }
+});
+lbBody.addEventListener("click", e => { if (e.target === lbBody) lb.close(); });  // tap outside the image
+$(".lb-close", lb).onclick = () => lb.close();
+lb.addEventListener("close", () => { lbImg.removeAttribute("src"); });
 
 // ---------- tags ----------
 
