@@ -9,192 +9,171 @@
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="apple-mobile-web-app-title" content="Receipts">
-<meta name="theme-color" content="#f4edc6" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#14162b" media="(prefers-color-scheme: dark)">
-<link rel="preload" href="/static/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+<meta name="theme-color" content="#a7b0ae" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1b1e1c" media="(prefers-color-scheme: dark)">
+<link rel="preload" href="/static/fonts/azeret-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  /* Archivo (SIL OFL, see static/fonts/OFL.txt), variable in weight and width */
-  @font-face { font-family: "Archivo"; font-weight: 100 900; font-stretch: 62% 125%; font-display: swap;
-               src: url(/static/fonts/archivo-latin.woff2) format("woff2");
+  /* Azeret Mono (SIL OFL, see static/fonts/OFL.txt), variable in weight */
+  @font-face { font-family: "Azeret Mono"; font-weight: 100 900; font-display: swap;
+               src: url(/static/fonts/azeret-mono-latin.woff2) format("woff2");
                unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-  @font-face { font-family: "Archivo"; font-weight: 100 900; font-stretch: 62% 125%; font-display: swap;
-               src: url(/static/fonts/archivo-latin-ext.woff2) format("woff2");
+  @font-face { font-family: "Azeret Mono"; font-weight: 100 900; font-display: swap;
+               src: url(/static/fonts/azeret-mono-latin-ext.woff2) format("woff2");
                unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 
-  /* A duplicate receipt book: canary copy sheet underneath, white originals on top, carbon-blue ink,
-     numbering-machine red for serials. In dark mode the page becomes the carbon sheet itself. */
+  /* The page is one long strip of thermal paper lying on a counter. Black print, with red as the second
+     colour of two-colour rolls. In dark mode only the counter goes dark and the paper dims; it stays paper. */
   :root {
     color-scheme: light dark;
-    --bg: #f4edc6; --card: #fcfcf8; --stub: #f8f4dc; --ink: #1a1c33; --muted: #5c5d70; --line: #d8d4be;
-    --accent: #2b2f8f; --accent-ink: #fff; --warn: #c4262e; --pending: #9a6200;
-    --narrow: "Archivo", "Arial Narrow", "Roboto Condensed", sans-serif-condensed, sans-serif;
+    --counter: #a7b0ae; --paper: #fbfbf8; --ink: #222; --muted: #66665f; --rule: #bdbdb6;
+    --red: #c3202a; --pending: #8a5a00;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #14162b; --card: #1d2040; --stub: #191b37; --ink: #e4e5f4; --muted: #9a9cbc; --line: #33375e;
-      --accent: #9ca0f5; --accent-ink: #14162b; --warn: #ff7a7f; --pending: #e3b04b;
-    }
+    :root { --counter: #1b1e1c; --paper: #dcdbd4; --muted: #57574f; --rule: #a3a29b; --red: #a3141d; --pending: #6b4500; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 15px/1.45 "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
-         font-variant-numeric: tabular-nums; }
-  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
-  h1 { margin: 0; font-family: var(--narrow); font-stretch: 62%; font-weight: 850; font-size: 56px;
-       line-height: .85; letter-spacing: -.01em; color: var(--accent); }
-  header a { color: var(--accent); font-size: 14px; font-weight: 600; text-underline-offset: 3px; padding-bottom: 4px; }
+  body { margin: 0; background: var(--counter); color: var(--ink);
+         font: 14px/1.5 "Azeret Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  main { color-scheme: light; position: relative; max-width: 560px; margin: 28px auto 40px; padding: 28px 24px 36px;
+         background: var(--paper); filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / .22)); }
+  /* torn edges, top and bottom */
+  main::before, main::after { content: ""; position: absolute; left: 0; right: 0; height: 8px; background: var(--paper); }
+  main::before { top: -8px; mask: conic-gradient(from 135deg at top, #000 90deg, #0000 0) 50% / 16px 100%; }
+  main::after { bottom: -8px; mask: conic-gradient(from -45deg at bottom, #000 90deg, #0000 0) 50% / 16px 100%; }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  /* Printers' double-width, double-height mode: the one loud thing on the strip */
+  header { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 22px; text-align: center; }
+  h1 { margin: 0 0 30px; font-size: 22px; font-weight: 800; line-height: 1.2; letter-spacing: .02em; text-transform: uppercase;
+       display: inline-block; transform: scale(2); transform-origin: center top; }
+  header a { color: var(--ink); font-size: 13px; text-underline-offset: 3px; }
 
   .add { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .add.busy { opacity: .55; pointer-events: none; }
-  .capture { display: block; padding: 20px 12px; border: 2px solid var(--accent); border-radius: 4px;
-             background: var(--card); color: var(--accent); font-size: 18px; font-weight: 700; font-stretch: 87.5%;
-             cursor: pointer; text-align: center; }
-  .capture.primary { background: var(--accent); color: var(--accent-ink); }
-  .capture:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .add.busy { opacity: .5; pointer-events: none; }
+  .capture { display: block; padding: 18px 10px; border: 1.5px dashed var(--ink); background: transparent; color: var(--ink);
+             font-size: 15px; font-weight: 700; cursor: pointer; text-align: center; }
+  .capture.primary { background: var(--ink); color: var(--paper); border-style: solid; }  /* reverse print */
+  .capture:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 3px; }
   /* visually hidden rather than display:none, so the inputs stay reachable by keyboard */
   .capture input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-  .drop-hint { margin: 8px 2px 0; font-size: 13px; color: var(--muted); text-align: center; }
-  body.dragging main::after { content: "Drop photos to upload"; position: fixed; inset: 12px; z-index: 20;
-             display: grid; place-items: center; border: 3px dashed var(--accent); border-radius: 6px;
-             background: color-mix(in srgb, var(--bg) 88%, transparent); color: var(--accent);
-             font-family: var(--narrow); font-stretch: 62%; font-weight: 850; font-size: 44px; pointer-events: none; }
+  .drop-hint { margin: 8px 0 0; font-size: 12px; color: var(--muted); text-align: center; }
+  body.dragging::after { content: "Drop photos to upload"; position: fixed; inset: 12px; z-index: 20;
+             display: grid; place-items: center; border: 3px dashed var(--ink); background: color-mix(in srgb, var(--paper) 90%, transparent);
+             color: var(--ink); font: 800 22px "Azeret Mono", ui-monospace, monospace; text-transform: uppercase; pointer-events: none; }
   @media (hover: none) { .drop-hint { display: none; } }  /* touch devices can't drag files in */
-  #msg { min-height: 1.4em; margin: 8px 2px 14px; color: var(--warn); font-size: 14px; }
+  #msg { min-height: 1.5em; margin: 8px 0 10px; color: var(--red); font-size: 13px; }
 
-  /* Each receipt is a page of the book: a stub on the left (serial number and photo), torn along a perforation. */
-  .receipt { --stub-w: 132px; position: relative; display: grid; grid-template-columns: var(--stub-w) 1fr;
-             background: var(--card); border: 1px solid var(--line); border-radius: 2px; margin-bottom: 14px;
-             box-shadow: 0 1px 0 var(--line), 0 2px 0 color-mix(in srgb, var(--line) 50%, transparent); }
+  /* Each receipt is a block on the strip, separated by a dashed tear line. */
+  .receipt { display: grid; grid-template-columns: 96px 1fr; gap: 14px; padding: 18px 0; border-top: 1.5px dashed var(--rule); }
   .receipt[hidden] { display: none; }  /* hidden by the tag filter; display:grid above would override it */
-  .receipt::before { content: ""; position: absolute; top: 6px; bottom: 6px; left: calc(var(--stub-w) - 4px); width: 8px;
-                     background: radial-gradient(circle at 4px 4px, var(--bg) 2.6px, transparent 3px) 0 0 / 8px 12px repeat-y;
-                     pointer-events: none; }
-  .stub { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 16px 12px 12px;
-          background: var(--stub); border-right: 1px dashed var(--line); }
-  .serial { font-family: var(--narrow); font-stretch: 62%; font-weight: 800; font-size: 22px; line-height: 1;
-            color: var(--warn); letter-spacing: .02em; }
-  /* The link stays as tall as the image, so the empty stub below it isn't clickable. */
+  .stub { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .serial { font-size: 13px; font-weight: 700; color: var(--red); }
+  /* The link stays as tall as the image, so the empty space below it isn't clickable. */
   .thumb-link { line-height: 0; }
-  .thumb { width: 104px; height: 142px; object-fit: cover; object-position: top; border-radius: 1px;
-           border: 1px solid var(--line); background: var(--line); cursor: zoom-in; }
-  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; align-content: start; padding: 14px 16px 14px 18px; min-width: 0; }
-  .fields label { display: flex; flex-direction: column; font-size: 12px; font-weight: 600; font-stretch: 87.5%;
-                  color: var(--muted); gap: 1px; }
+  .thumb { width: 96px; height: 132px; object-fit: cover; object-position: top; border: 1px solid var(--rule);
+           background: var(--rule); cursor: zoom-in; filter: grayscale(1) contrast(1.1); }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; align-content: start; min-width: 0; }
+  .fields label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 1px; }
   .fields label.wide { grid-column: 1 / -1; }
-  .money { display: flex; gap: 6px; }
-  .money .cur { flex: none; width: 3.4em; text-align: center; text-transform: uppercase; color: var(--muted); }
-  /* filled in like a form: a rule to write on rather than a box */
-  .fields input { font: inherit; font-size: 16px; font-weight: 500; font-stretch: 100%; color: var(--ink);
-                  background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
-                  padding: 4px 1px 3px; width: 100%; min-width: 0; }
-  .fields input[name=vendor] { font-size: 20px; font-weight: 700; }
-  .fields input[name=total] { font-weight: 700; }
-  .fields input::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
-  .fields input:focus { outline: none; border-bottom: 2px solid var(--accent); padding-bottom: 2px; }
-  .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 12px; color: var(--muted); }
-  .status { font-weight: 700; }
+  .money { display: flex; gap: 8px; }
+  .money .cur { flex: none; width: 3.6em; text-align: center; text-transform: uppercase; }
+  /* inputs stay at 16px, or iOS zooms the page when one is focused */
+  .fields input { font: inherit; font-size: 16px; color: var(--ink); background: transparent; border: 0;
+                  border-bottom: 1.5px dotted var(--rule); border-radius: 0; padding: 3px 0 2px; width: 100%; min-width: 0; }
+  .fields input[name=vendor] { font-size: 18px; font-weight: 700; }
+  .fields input[name=total] { font-weight: 700; text-align: right; }
+  .fields input::placeholder { color: color-mix(in srgb, var(--muted) 65%, transparent); }
+  .fields input:focus { outline: none; border-bottom: 1.5px solid var(--ink); }
+  .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: center; font-size: 11px;
+          color: var(--muted); overflow-wrap: anywhere; }
+  .status { font-weight: 700; text-transform: uppercase; }
   .status.pending { color: var(--pending); }
-  .status.error { color: var(--warn); }
-  .status.done { color: var(--accent); }
-  .err { grid-column: 1 / -1; color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
-  .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
-  .actions button { font: inherit; font-size: 13px; font-weight: 600; font-stretch: 87.5%; padding: 5px 10px;
-                    border-radius: 3px; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--ink); }
-  .actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-  .actions button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  .actions button.primary:hover:not(:disabled) { color: var(--accent-ink); }
-  .actions button.danger, .actions button.danger:hover:not(:disabled) { color: var(--warn); }
-  .actions button.danger:hover:not(:disabled) { border-color: var(--warn); }
-  .actions button:disabled { opacity: .45; cursor: default; }
+  .status.error { color: var(--red); }
+  .status.done { color: var(--ink); }
+  .err { grid-column: 1 / -1; color: var(--red); font-size: 12px; overflow-wrap: anywhere; }
+  .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+  .actions button { font: inherit; font-size: 12px; font-weight: 600; padding: 4px 8px; cursor: pointer; border-radius: 0;
+                    border: 1px solid var(--ink); background: transparent; color: var(--ink); }
+  .actions button:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  .actions button.primary { background: var(--ink); color: var(--paper); }
+  .actions button.danger { color: var(--red); border-color: var(--red); }
+  .actions button:disabled { opacity: .35; cursor: default; }
   .note { align-self: center; font-size: 12px; margin-left: 2px; }
   .note.dirty { color: var(--pending); font-weight: 600; }
-  .note.saved { color: var(--accent); font-weight: 700; }
-  .note.failed { color: var(--warn); }
-  .receipt.dirty { border-color: var(--pending); box-shadow: inset 0 3px 0 var(--pending); }
-  .fields input.changed { border-bottom-color: var(--pending); background: color-mix(in srgb, var(--pending) 9%, transparent); }
+  .note.saved { font-weight: 700; }
+  .note.failed { color: var(--red); }
+  .receipt.dirty { background: color-mix(in srgb, var(--pending) 7%, transparent); box-shadow: -12px 0 0 color-mix(in srgb, var(--pending) 7%, transparent), 12px 0 0 color-mix(in srgb, var(--pending) 7%, transparent); }
+  .fields input.changed { border-bottom: 1.5px solid var(--pending); }
   .receipt.just-saved { animation: saved 1.8s ease-out; }
-  @keyframes saved {
-    from { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
-    to { border-color: var(--line); box-shadow: 0 0 0 3px transparent; }
-  }
-  .upload { display: none; margin-top: 12px; background: var(--card); border: 1px solid var(--line);
-            border-radius: 2px; padding: 10px 12px; font-size: 14px; }
+  @keyframes saved { from { background: color-mix(in srgb, var(--ink) 10%, transparent); } to { background: transparent; } }
+  .upload { display: none; margin-top: 12px; border: 1px solid var(--ink); padding: 10px 12px; font-size: 13px; }
   .upload.active { display: block; }
   .upload-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-  .upload button { font: inherit; font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 3px; cursor: pointer;
-                   border: 1px solid var(--line); background: transparent; color: var(--ink); }
-  .bar { height: 4px; background: var(--line); margin-top: 8px; overflow: hidden; }
-  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .upload button { font: inherit; font-size: 12px; font-weight: 600; padding: 4px 8px; cursor: pointer; border-radius: 0;
+                   border: 1px solid var(--ink); background: transparent; color: var(--ink); }
+  .bar { height: 4px; background: var(--rule); margin-top: 8px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--ink); transition: width .2s; }
   .bar.indeterminate > div { width: 30%; animation: slide 1.2s ease-in-out infinite; }
   @keyframes slide { from { margin-left: -30%; } to { margin-left: 100%; } }
-  .conn { display: none; margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--warn); font-size: 14px;
-          background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--warn); }
+  .conn { display: none; margin: 0 0 12px; padding: 8px 10px; border: 1.5px solid var(--red); font-size: 13px; color: var(--red); }
   .conn.show { display: block; }
-  .slow { color: var(--warn); }
+  .slow { color: var(--red); }
   .tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .chips { display: contents; }
-  /* tags look like rubber stamps */
-  .chip { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 13px; font-weight: 650;
-          font-stretch: 87.5%; line-height: 1; padding: 5px 7px; border-radius: 3px; border: 1.5px solid var(--accent);
-          color: var(--accent); background: transparent; cursor: pointer; }
-  .chip:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-  .chip .x { opacity: .6; font-weight: 400; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; font-weight: 600; line-height: 1;
+          padding: 5px 7px; border: 1px solid var(--ink); border-radius: 0; color: var(--ink); background: transparent; cursor: pointer; }
+  .chip:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+  .chip .x { opacity: .6; }
   .tag-entry { position: relative; flex: 1 1 120px; min-width: 120px; }
-  .tag-entry input { width: 100%; font: inherit; font-size: 13px; color: var(--ink); background: transparent;
-                     border: 1.5px dashed var(--line); border-radius: 3px; padding: 4px 8px; }
-  .tag-entry input:focus { outline: none; border: 1.5px solid var(--accent); }
-  .suggest { display: none; position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0;
-             min-width: 180px; background: var(--card); border: 1px solid var(--line); border-radius: 3px;
-             box-shadow: 0 8px 20px rgb(20 22 43 / .18); padding: 4px; max-height: 240px; overflow-y: auto; }
+  .tag-entry input { width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: transparent;
+                     border: 0; border-bottom: 1.5px dotted var(--rule); border-radius: 0; padding: 2px 0; }
+  .tag-entry input:focus { outline: none; border-bottom: 1.5px solid var(--ink); }
+  .suggest { display: none; position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; right: 0; min-width: 200px;
+             background: var(--paper); border: 1px solid var(--ink); padding: 2px; max-height: 240px; overflow-y: auto; }
   .suggest.open { display: block; }
   .suggest button { display: flex; justify-content: space-between; width: 100%; text-align: left; font: inherit;
-                    font-size: 14px; padding: 7px 8px; border: 0; border-radius: 2px; background: transparent;
-                    color: var(--ink); cursor: pointer; }
-  .suggest button.active, .suggest button:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
+                    font-size: 13px; padding: 7px 8px; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+  .suggest button.active, .suggest button:hover { background: var(--ink); color: var(--paper); }
+  .suggest button.active .count, .suggest button:hover .count { color: inherit; }
   .suggest .count { color: var(--muted); font-size: 12px; }
   .lightbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0;
-              border: 0; background: #101226; color: #e4e5f4; }
-  .lightbox::backdrop { background: rgb(16 18 38 / .6); }
+              border: 0; background: #1b1e1c; color: #ecebe4; color-scheme: dark; }
+  .lightbox::backdrop { background: rgb(0 0 0 / .6); }
   .lightbox[open] { display: flex; flex-direction: column; }
-  .lb-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: 14px; }
-  .lb-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-              font-family: var(--narrow); font-stretch: 75%; font-weight: 700; font-size: 20px; }
-  .lb-bar button, .lb-bar a { font: inherit; font-size: 14px; font-weight: 600; color: #e4e5f4; background: rgb(156 160 245 / .16);
-                              border: 0; border-radius: 3px; padding: 6px 10px; cursor: pointer; text-decoration: none; }
+  .lb-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; font-size: 13px; }
+  .lb-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+  .lb-bar button, .lb-bar a { font: inherit; font-size: 13px; color: #ecebe4; background: transparent; border: 1px solid #ecebe4;
+                              padding: 5px 9px; cursor: pointer; text-decoration: none; }
   .lb-bar [hidden] { display: none; }
-  .lb-bar .lb-close { font-size: 18px; line-height: 1; padding: 6px 11px; }
+  .lb-bar .lb-close { font-size: 16px; line-height: 1; padding: 5px 10px; }
   /* flex + margin:auto centres the image when it fits and still lets every edge scroll into view when zoomed */
   .lb-body { flex: 1; min-height: 0; overflow: auto; display: flex; padding: 0 16px 16px; }
   .lb-body img { margin: auto; max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
   .lb-body.zoomed img { max-width: none; max-height: none; cursor: zoom-out; }
   html:has(.lightbox[open]) { overflow: hidden; }  /* don't scroll the page behind the viewer */
-  .empty { color: var(--muted); padding: 40px 0; text-align: center; font-size: 16px; }
-  .empty button, .filter .clear { font: inherit; font-size: 14px; font-weight: 600; color: var(--accent); background: transparent;
+  .empty { color: var(--muted); padding: 36px 0; text-align: center; border-top: 1.5px dashed var(--rule); }
+  .empty button, .filter .clear { font: inherit; font-size: 13px; color: var(--ink); background: transparent;
                                   border: 0; padding: 4px 6px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
-  .filter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 2px 12px; font-size: 13px; }
+  .filter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 14px; font-size: 12px; }
   .filter[hidden] { display: none; }
-  .filter .label { color: var(--muted); font-weight: 600; margin-right: 2px; }
-  .fchip { font: inherit; font-size: 13px; font-weight: 650; font-stretch: 87.5%; line-height: 1; padding: 5px 8px;
-           border-radius: 3px; cursor: pointer; border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
-           background: var(--card); color: var(--accent); }
-  .fchip .count { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 5px; }
-  .fchip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .filter .label { color: var(--muted); margin-right: 2px; }
+  .fchip { font: inherit; font-size: 12px; font-weight: 600; line-height: 1; padding: 5px 7px; cursor: pointer; border-radius: 0;
+           border: 1px dashed var(--ink); background: transparent; color: var(--ink); }
+  .fchip .count { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .fchip.on { background: var(--ink); border-style: solid; color: var(--paper); }
   .fchip.on .count { color: inherit; opacity: .75; }
   .fchip.untagged { font-style: italic; }
-  /* the running total, like the tape at the foot of an adding machine */
-  .total { margin: 4px 2px 14px; font-family: var(--narrow); font-stretch: 75%; font-weight: 700; font-size: 20px;
-           color: var(--ink); }
+  /* the running total, in double-height print */
+  .total { margin: 0 0 30px; font-size: 15px; font-weight: 800; line-height: 1.2; text-transform: uppercase;
+           transform: scaleY(2); transform-origin: left top; }
   .total:empty { display: none; }
 
   @media (max-width: 480px) {
-    h1 { font-size: 46px; }
-    .receipt { --stub-w: 96px; }
-    .stub { padding: 10px 12px 10px 10px; }
-    .serial { font-size: 18px; }
+    main { margin: 18px 8px 28px; padding: 22px 14px 28px; }
+    h1 { font-size: 18px; margin-bottom: 24px; }
+    .receipt { grid-template-columns: 72px 1fr; gap: 12px; }
     .thumb { width: 72px; height: 100px; }
-    .fields { grid-template-columns: 1fr; gap: 10px; padding: 12px 12px 12px 14px; }
+    .fields { grid-template-columns: 1fr; gap: 8px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .receipt.just-saved, .bar.indeterminate > div { animation: none; }
