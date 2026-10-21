@@ -100,6 +100,8 @@ Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
   keep everything on your machine.
 - Your data lives in `data/` (database, photos, downloaded model) and your key in `.env`; both are ignored
   by git. Back up `data/` if you care about the receipts.
+- To reach it from your phone away from home without opening it to the internet, see
+  [Side quest: a Raspberry Pi you can reach from anywhere](#side-quest-a-raspberry-pi-you-can-reach-from-anywhere).
 
 ## API
 
@@ -118,6 +120,80 @@ Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 | GET | `/api/receipts/{id}/image/{original\|scan}` | JPEG |
 | GET | `/api/receipts/{id}/thumb/{original\|scan}` | small JPEG for the list |
 | GET | `/api/receipts.csv` | export; takes the same `tag` / `untagged` filters |
+
+## Raspberry Pi deployment you can reach from anywhere
+
+You can run this app on a Pi at home and use it from your phone wherever you
+are, through [Tailscale](https://tailscale.com/). Nothing is
+opened to the internet, so the no-login caveat above still only covers devices you own.
+
+<details>
+<summary>Setup notes</summary>
+
+**The Pi.** Use a Pi 3 or above; Pi 4 or 5 recommended.
+Clone the repo, install uv, fill in `.env`, and check that `uv run receipt-scanner` starts.
+
+**Keep it running** with a systemd unit, `/etc/systemd/system/receipt-scanner.service` (change `pi` and the
+paths to your user and checkout):
+
+```ini
+[Unit]
+Description=Receipt Scanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/receipt_scanner
+ExecStart=/home/pi/.local/bin/uv run receipt-scanner
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then run `sudo systemctl enable --now receipt-scanner`, and see its logs with `journalctl -u receipt-scanner -f`.
+
+**Tailscale.** Install it on the Pi (`curl -fsSL https://tailscale.com/install.sh | sh`, then
+`sudo tailscale up`) and install the Tailscale app on your phone, signed in to the same account. With
+MagicDNS (on by default), the phone can open `http://<pi-hostname>:8000` from anywhere. To get a shorter
+name, rename the machine in the Tailscale admin console, e.g. to `receipts`. Do not turn on **Tailscale
+Funnel** for it, since that makes it public.
+
+### Optional: HTTPS without the port
+
+The simplest way is `sudo tailscale serve --bg 8000`, which gives you
+`https://<pi-hostname>.<your-tailnet>.ts.net` with a real certificate (turn on HTTPS certificates in the
+admin console first). Then set `HOST=127.0.0.1` in `.env` so the app is only reachable through it.
+
+### Optional: nginx reverse proxy and DNS
+
+If you'd rather use a name like `receipts.example.com`, add a DNS
+`A` record for it pointing at the Pi's Tailscale address (`tailscale ip -4`, a `100.x.y.z` address).
+Anyone can look the name up, but the address only works from inside your tailnet. Put nginx in front:
+
+```nginx
+server {
+    listen 80;
+    server_name receipts.example.com;
+    client_max_body_size 30m;   # the app's own upload limit; nginx's default of 1 MB rejects phone photos
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+and set `HOST=127.0.0.1` in `.env` here too. Plain HTTP is fine for the app, and Tailscale already encrypts
+the traffic between your devices. For HTTPS on your own domain you'd need a certificate from a DNS
+challenge (e.g. certbot with your DNS provider's plugin), because *Let's Encrypt* can't reach the Pi to check it.
+
+Alternatively, you can use custom DNS entries in your home router or something like [pi hole](https://pi-hole.net/) and configure tailscale to use it remotely.
+
+</details>
 
 ## License
 
