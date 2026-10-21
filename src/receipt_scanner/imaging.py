@@ -69,6 +69,80 @@ def _candidate_masks(small: np.ndarray):
     yield cv2.morphologyEx(edges, cv2.MORPH_CLOSE, rect(5), iterations=2)
 
 
+def _intersect(a: np.ndarray, b: np.ndarray) -> np.ndarray | None:
+    """Intersection of the infinite lines through segments a and b (each x1, y1, x2, y2)."""
+    p, r = a[:2], a[2:] - a[:2]
+    q, s = b[:2], b[2:] - b[:2]
+    denom = r[0] * s[1] - r[1] * s[0]
+    if abs(denom) < 1e-6:
+        return None
+    t = ((q[0] - p[0]) * s[1] - (q[1] - p[1]) * s[0]) / denom
+    return p + t * r
+
+
+def _line_quad(small: np.ndarray) -> np.ndarray | None:
+    """Fallback for low-contrast photos (white receipt on a white sheet) where neither mask yields a
+    closed outline: build quads from straight edge segments and keep the one whose four sides are
+    best supported by edges. Returns corners in `small`'s coordinates, or None."""
+    h, w = small.shape
+    rect = lambda k: cv2.getStructuringElement(cv2.MORPH_RECT, (k, k))
+    # Wipe out the printed text first (it's what makes line detection noisy), then use low Canny
+    # thresholds: paper-against-bedsheet edges are faint.
+    notext = cv2.morphologyEx(small, cv2.MORPH_CLOSE, rect(15))
+    edges = cv2.Canny(cv2.GaussianBlur(notext, (5, 5), 0), 10, 60)
+    segs = cv2.HoughLinesP(edges, 1, np.pi / 180, 30, minLineLength=0.06 * max(h, w), maxLineGap=15)
+    if segs is None:
+        return None
+    segs = segs.reshape(-1, 4).astype(np.float32)
+    dx, dy = np.abs(segs[:, 2] - segs[:, 0]), np.abs(segs[:, 3] - segs[:, 1])
+    length = np.hypot(dx, dy)
+    tan30 = np.tan(np.radians(30))
+    longest = lambda sel: segs[sel][np.argsort(-length[sel])][:12]
+    vert, horiz = longest(dx < dy * tan30), longest(dy < dx * tan30)
+    if len(vert) < 2 or len(horiz) < 2:
+        return None
+
+    support = cv2.dilate(edges, rect(5)) > 0
+    frame_area = h * w
+
+    def side_support(p0, p1):
+        n = max(int(np.hypot(*(p1 - p0)) / 3), 2)
+        t = np.linspace(0, 1, n)[:, None]
+        pts = np.rint(p0 + t * (p1 - p0)).astype(int)
+        inside = (pts[:, 0] >= 0) & (pts[:, 0] < w) & (pts[:, 1] >= 0) & (pts[:, 1] < h)
+        hits = np.zeros(n, bool)
+        hits[inside] = support[pts[inside, 1], pts[inside, 0]]
+        return hits.mean()
+
+    best, best_score = None, 0.0
+    slack = 0.02 * max(h, w)
+    for i in range(len(vert)):
+        for j in range(i + 1, len(vert)):
+            for k in range(len(horiz)):
+                for m in range(k + 1, len(horiz)):
+                    corners = [_intersect(a, b) for a, b in
+                               ((vert[i], horiz[k]), (vert[j], horiz[k]), (vert[j], horiz[m]), (vert[i], horiz[m]))]
+                    if any(c is None for c in corners):
+                        continue
+                    quad = _order_corners(np.array(corners))
+                    if (quad[:, 0].min() < -slack or quad[:, 1].min() < -slack
+                            or quad[:, 0].max() > w + slack or quad[:, 1].max() > h + slack):
+                        continue
+                    if not cv2.isContourConvex(quad.reshape(-1, 1, 2)):
+                        continue
+                    area = cv2.contourArea(quad)
+                    if not MIN_AREA_FRAC * frame_area <= area <= 0.98 * frame_area:
+                        continue
+                    sides = [(quad[n], quad[(n + 1) % 4]) for n in range(4)]
+                    fracs = [side_support(*s) for s in sides]
+                    if min(fracs) < 0.4:  # every side must really be an edge, not just a long sheet fold (torn edges score ~0.5)
+                        continue
+                    score = sum(f * np.hypot(*(b - a)) for f, (a, b) in zip(fracs, sides))
+                    if score > best_score:
+                        best, best_score = quad, score
+    return best
+
+
 def find_receipt_quad(grey: np.ndarray, min_fill: float = 0.85, margin: float = 0.0) -> np.ndarray | None:
     """Find the receipt's four corners in full-resolution coordinates, or None.
 
@@ -102,10 +176,16 @@ def find_receipt_quad(grey: np.ndarray, min_fill: float = 0.85, margin: float = 
                 if rw * rh == 0 or area / (rw * rh) < min_fill:
                     continue
                 quad = cv2.boxPoints(rect)
-            quad = np.asarray(quad, dtype=np.float32).reshape(4, 2) / scale
-            centre = quad.mean(axis=0)
-            return _order_corners(centre + (quad - centre) * (1 + margin))
-    return None
+            return _finish_quad(quad, scale, margin)
+    quad = _line_quad(small)
+    return None if quad is None else _finish_quad(quad, scale, margin)
+
+
+def _finish_quad(quad, scale: float, margin: float) -> np.ndarray:
+    """Scale detection-size corners back to full resolution, grow by `margin`, order TL, TR, BR, BL."""
+    quad = np.asarray(quad, dtype=np.float32).reshape(4, 2) / scale
+    centre = quad.mean(axis=0)
+    return _order_corners(centre + (quad - centre) * (1 + margin))
 
 
 def warp(grey: np.ndarray, quad: np.ndarray) -> np.ndarray:
