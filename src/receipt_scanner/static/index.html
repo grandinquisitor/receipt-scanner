@@ -450,7 +450,21 @@ function card(r) {
     : "not cropped: receipt edge not found";
   setupTags(el, r);
   $(".rotate", el).onclick = () => act(() => api(`/api/receipts/${r.id}/rotate`, {method: "POST"}));
-  $(".recrop", el).onclick = () => act(() => api(`/api/receipts/${r.id}/recrop`, {method: "POST"}), "Re-cropped.");
+  const recrop = $(".recrop", el);
+  recrop.onclick = async () => {
+    // Can take several seconds (more if the image worker has to start), so show it on the button itself.
+    recrop.disabled = true;
+    recrop.textContent = "Re-cropping…";
+    try {
+      await api(`/api/receipts/${r.id}/recrop`, {method: "POST"});
+    } catch (e) {
+      recrop.disabled = false;
+      recrop.textContent = "Re-crop";
+      setNote(`Not re-cropped: ${e.message}`, "failed");
+      return;
+    }
+    await load();  // rebuilds the card with the new image
+  };
 
   save.onclick = async () => {
     save.disabled = revert.disabled = true;
