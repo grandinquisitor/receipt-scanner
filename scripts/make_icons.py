@@ -6,6 +6,8 @@ The icon is a white receipt with a zigzag tear-off edge on the counter grey-gree
 100x100 grid and written both as SVG and, via Pillow, as PNG/ICO, so every size matches.
 """
 
+import shutil
+import subprocess
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -69,6 +71,11 @@ def main():
         png(size, rounded=False).convert("RGB").save(OUT / f"icon-{size}.png", optimize=True)
         # Android "maskable": may be cropped to a circle, so keep the receipt inside the middle 80%.
         png(size, rounded=False, scale=0.78).convert("RGB").save(OUT / f"icon-maskable-{size}.png", optimize=True)
+    # optipng squeezes a bit more out than Pillow's optimize=True; optional, since it's an external tool.
+    if optipng := shutil.which("optipng"):
+        subprocess.run([optipng, "-quiet", "-o7", *sorted(OUT.glob("*.png"))], check=True)
+    else:
+        print("optipng not found; skipping extra PNG compression")
     for p in sorted(OUT.iterdir()):
         print(f"{p.name:28} {p.stat().st_size:>6} bytes")
 
