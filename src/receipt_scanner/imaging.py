@@ -1,4 +1,7 @@
-"""Image handling: EXIF orientation, greyscale, receipt detection + perspective correction."""
+"""Image handling: EXIF orientation, greyscale, receipt detection + perspective correction.
+
+Heavy (OpenCV, numpy): only imported inside the short-lived image worker processes (see worker.py).
+"""
 
 import io
 import logging
@@ -12,9 +15,6 @@ register_heif_opener()  # iPhone photos uploaded from a computer are often HEIC
 
 DETECT_EDGE = 1000   # long edge used for contour detection
 MAX_EDGE = 1600      # long edge of stored / sent images
-THUMB_WIDTH = 360    # list thumbnails are shown ~110px wide; this stays sharp on 3x phone screens
-THUMB_QUALITY = 75
-THUMB_MAX_ASPECT = 150 / 110  # height/width of the list's thumbnail box, which shows the top of the receipt
 JPEG_QUALITY = 82
 MIN_AREA_FRAC = 0.15  # receipt must cover at least this fraction of the frame
 
@@ -43,22 +43,6 @@ def limit_size(grey: np.ndarray, max_edge: int = MAX_EDGE) -> np.ndarray:
 
 def to_jpeg(grey: np.ndarray) -> bytes:
     ok, buf = cv2.imencode(".jpg", grey, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
-    if not ok:
-        raise ValueError("JPEG encoding failed")
-    return buf.tobytes()
-
-
-def make_thumb(jpeg: bytes) -> bytes:
-    """Shrink a stored greyscale JPEG to list-thumbnail size, keeping only the top part that the
-    list's thumbnail box shows (long receipts would otherwise make tall, heavy thumbnails)."""
-    grey = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_GRAYSCALE)
-    h, w = grey.shape
-    if h > w * THUMB_MAX_ASPECT:
-        grey = grey[: round(w * THUMB_MAX_ASPECT)]
-        h = grey.shape[0]
-    if w > THUMB_WIDTH:
-        grey = cv2.resize(grey, (THUMB_WIDTH, round(h * THUMB_WIDTH / w)), interpolation=cv2.INTER_AREA)
-    ok, buf = cv2.imencode(".jpg", grey, [cv2.IMWRITE_JPEG_QUALITY, THUMB_QUALITY])
     if not ok:
         raise ValueError("JPEG encoding failed")
     return buf.tobytes()
@@ -136,20 +120,6 @@ def warp(grey: np.ndarray, quad: np.ndarray) -> np.ndarray:
 def enhance(grey: np.ndarray) -> np.ndarray:
     """Local contrast boost that keeps greys (thresholding to pure B/W tends to hurt OCR)."""
     return cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(grey)
-
-
-ROTATE_CW = cv2.ROTATE_90_CLOCKWISE
-
-ROTATIONS = {  # which image edge the top of the receipt text faces -> rotation that makes it upright
-    "right": cv2.ROTATE_90_COUNTERCLOCKWISE,
-    "left": cv2.ROTATE_90_CLOCKWISE,
-    "bottom": cv2.ROTATE_180,
-}
-
-
-def rotate_jpeg(data: bytes, code: int) -> bytes:
-    grey = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
-    return to_jpeg(cv2.rotate(grey, code))
 
 
 def scan_from_grey(grey: np.ndarray, unwarper=None) -> bytes | None:

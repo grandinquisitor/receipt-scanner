@@ -1,16 +1,23 @@
 """Pluggable unwarpers: flatten a roughly-cropped, possibly curved or crumpled receipt.
 
 Pick one with RECEIPT_UNWARPER (default "uvdoc"; "none" disables). To add a backend, write a class with
-`name`, `start()` (begin any slow loading in the background) and `unwarp(grey) -> grey`, and register it
-below. `unwarp` may raise; callers fall back to the plain crop.
+`name`, `prepare()` and `unwarp(grey) -> grey`, and register it below. `unwarp` may raise; callers fall
+back to the plain crop.
+
+`prepare()` runs once in the web server (in a background thread) to fetch anything slow, such as model
+files. `unwarp()` runs in a short-lived image-processing process, so it should load its model itself and
+the module shouldn't import heavy libraries at the top level (the server imports it too).
 """
+
+from __future__ import annotations
 
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
 
 __all__ = ["Unwarper", "UnwarpUnavailable", "get_unwarper", "REGISTRY"]
 
@@ -22,8 +29,8 @@ class UnwarpUnavailable(Exception):
 class Unwarper(Protocol):
     name: str
 
-    def start(self) -> None:
-        """Begin loading in the background; must return quickly."""
+    def prepare(self) -> None:
+        """Fetch whatever unwarp() will need (may be slow; called from a background thread)."""
         ...
 
     def unwarp(self, grey: np.ndarray) -> np.ndarray:

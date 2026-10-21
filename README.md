@@ -50,6 +50,8 @@ filter is kept in the page address so it survives a reload or bookmark, and **Ex
    uncropped and the corrected image are saved as JPEGs with a long edge of at most 1600px, typically
    80–200 KB each. If no receipt outline is found, only the original is kept. You can switch
    between the cropped and uncropped image for each receipt in the UI.
+   This runs in a short-lived helper process per photo (`worker.py`), so OpenCV, numpy and the model are
+   only in memory for those few seconds; the web server itself idles at well under 100 MB.
 2. **Extraction** (`extractors/`): runs in the background after upload. If it fails (no key, network error),
    the photo and row are kept with `status = 'error'`, and you can press **Re-extract**.
 3. **Storage**: `data/receipts.db` (table `receipts`), with images in `data/images/`. List thumbnails are

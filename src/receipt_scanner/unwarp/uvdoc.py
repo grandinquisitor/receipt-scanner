@@ -4,21 +4,27 @@ SIGGRAPH Asia 2023; https://github.com/tanguymagne/UVDoc, MIT licence).
 The network predicts a coarse 2D grid saying, for each point of the flattened page, where it lies in
 the input photo; we upsample that grid and resample the image with it. The ONNX export of the
 network is downloaded once, on first start, from the `docuwarp` package on PyPI, pinned by hash.
+
+The web server only calls prepare() (the download); unwarp() runs in the image-processing worker, so
+OpenCV, numpy and onnxruntime are imported there, not at module level.
 """
+
+from __future__ import annotations
 
 import hashlib
 import io
 import logging
 import tempfile
-import threading
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import cv2
 import httpx
-import numpy as np
 
 from . import UnwarpUnavailable
+
+if TYPE_CHECKING:
+    import numpy as np
 
 log = logging.getLogger(__name__)
 
@@ -62,33 +68,30 @@ class UVDocUnwarper:
     def __init__(self, model_dir: Path):
         self.model_path = model_dir / MODEL_FILE
         self._session = None
-        self._error: str | None = None
-        self._lock = threading.Lock()
-        self._started = False
 
-    def start(self) -> None:
-        with self._lock:
-            if self._started:
-                return
-            self._started = True
-        threading.Thread(target=self._load, name="uvdoc-load", daemon=True).start()
-
-    def _load(self) -> None:
+    def prepare(self) -> None:
+        """Download the model if it's missing or corrupt."""
         try:
-            import onnxruntime as ort  # imported lazily so "none" works without it
-
-            ort.disable_telemetry_events()
             if not self.model_path.exists() or _sha256(self.model_path.read_bytes()) != MODEL_SHA256:
                 fetch_model(self.model_path)
+            log.info("UVDoc model ready")
+        except Exception as e:
+            log.warning("UVDoc model unavailable, receipts get the plain crop: %s: %s", type(e).__name__, e)
+
+    def _load(self):
+        if self._session is None:
+            if not self.model_path.exists():
+                raise UnwarpUnavailable("UVDoc model isn't downloaded (yet)")
+            import onnxruntime as ort
+
+            ort.disable_telemetry_events()
             self._session = ort.InferenceSession(str(self.model_path), providers=["CPUExecutionProvider"])
-            log.info("UVDoc unwarper ready")
-        except Exception as e:  # remembered, so we don't retry on every upload
-            self._error = f"{type(e).__name__}: {e}"
-            log.warning("UVDoc unwarper disabled: %s", self._error)
+        return self._session
 
     def unwarp(self, grey: np.ndarray) -> np.ndarray:
-        if self._session is None:
-            raise UnwarpUnavailable(self._error or "UVDoc model is still loading")
+        import cv2
+
+        self._load()
         # The network expects portrait input; handle sideways crops without changing their orientation.
         if grey.shape[1] > grey.shape[0]:
             out = self._unwarp_portrait(cv2.rotate(grey, cv2.ROTATE_90_CLOCKWISE))
@@ -96,6 +99,9 @@ class UVDocUnwarper:
         return self._unwarp_portrait(grey)
 
     def _unwarp_portrait(self, grey: np.ndarray) -> np.ndarray:
+        import cv2
+        import numpy as np
+
         h, w = grey.shape
         small = cv2.resize(grey, (INPUT_W, INPUT_H), interpolation=cv2.INTER_AREA)
         rgb = np.repeat(small[None, None, :, :], 3, axis=1).astype(np.float16) / 255

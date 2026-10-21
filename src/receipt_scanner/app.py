@@ -4,6 +4,7 @@ import csv
 import io
 import logging
 import os
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -17,15 +18,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from . import imaging
+from . import jpeg, worker
 from .db import DB, EDITABLE, utc_now
 from .extractors import ExtractionError, Extractor, get_extractor
-from .unwarp import Unwarper, get_unwarper
+from .unwarp import get_unwarper
 
 log = logging.getLogger("receipt_scanner")
 
 DATA_DIR = Path(os.environ.get("RECEIPT_DATA_DIR", "data")).resolve()
 IMAGE_DIR = DATA_DIR / "images"
+MODEL_DIR = DATA_DIR / "models"
 IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 THUMB_DIR = DATA_DIR / "thumbs"  # derived from images/, safe to delete; rebuilt on demand
 THUMB_DIR.mkdir(parents=True, exist_ok=True)
@@ -42,15 +44,11 @@ def extractor() -> Extractor:
     return get_extractor()
 
 
-@lru_cache(maxsize=1)
-def unwarper() -> Unwarper | None:
-    return get_unwarper(DATA_DIR / "models")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if (u := unwarper()) is not None:
-        u.start()  # loads (and on first run downloads) the model in the background
+    if (u := get_unwarper(MODEL_DIR)) is not None:
+        # Fetch the model in the background (first run only); the image worker loads it per job.
+        threading.Thread(target=u.prepare, name="unwarper-prepare", daemon=True).start()
     yield
 
 
@@ -58,20 +56,19 @@ app = FastAPI(title="Receipt Scanner", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")  # icons, web app manifest
 
 
-def rotate_images(row: dict, code: int) -> None:
+def rotate_images(row: dict, rotation) -> None:
     """Rotate the stored original and scan in place (they share orientation)."""
     for key in ("original_path", "scan_path"):
         if row[key]:
             path = DATA_DIR / row[key]
-            path.write_bytes(imaging.rotate_jpeg(path.read_bytes(), code))
+            path.write_bytes(jpeg.rotate_jpeg(path.read_bytes(), rotation))
     db.update(row["id"], image_version=row["image_version"] + 1)
 
 
 def make_scan(row: dict) -> bool:
     """(Re)build the scan from the stored original. Returns False if no receipt was found,
     in which case any existing scan is left alone."""
-    grey = imaging.load_grey((DATA_DIR / row["original_path"]).read_bytes())
-    scan = imaging.scan_from_grey(grey, unwarper())
+    scan = worker.scan((DATA_DIR / row["original_path"]).read_bytes(), MODEL_DIR)
     if scan is None:
         return False
     scan_rel = row["scan_path"] or row["original_path"].replace("_original.jpg", "_scan.jpg")
@@ -118,8 +115,8 @@ def run_extraction(rid: int) -> None:
         extractor=ex.name,
         raw_json=raw,
     )
-    if fields.text_top in imaging.ROTATIONS:
-        rotate_images(db.get(rid), imaging.ROTATIONS[fields.text_top])
+    if fields.text_top in jpeg.ROTATIONS:
+        rotate_images(db.get(rid), jpeg.ROTATIONS[fields.text_top])
 
 
 STALE_AFTER_S = 180  # longer than any extraction should take (Anthropic: 90s timeout x 2 attempts)
@@ -180,7 +177,7 @@ async def upload(background: BackgroundTasks, file: UploadFile = File(...)):
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "image too large")
     try:
-        original, scan = await run_in_threadpool(imaging.process, data, unwarper())
+        original, scan = await run_in_threadpool(worker.process, data, MODEL_DIR)
     except Exception as e:
         raise HTTPException(400, f"could not read image: {e}") from e
 
@@ -295,7 +292,7 @@ async def recrop(rid: int):
 @app.post("/api/receipts/{rid}/rotate")
 def rotate(rid: int):
     """Rotate the stored images 90° clockwise (manual fix when auto-orientation gets it wrong)."""
-    rotate_images(get_or_404(rid), imaging.ROTATE_CW)
+    rotate_images(get_or_404(rid), jpeg.ROTATE_CW)
     return public(db.get(rid))
 
 
@@ -334,6 +331,6 @@ def thumb(rid: int, kind: str):
     src, dst = DATA_DIR / rel, thumb_path(rel)
     if not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime:
         tmp = dst.with_suffix(f".{uuid.uuid4().hex}.tmp")
-        tmp.write_bytes(imaging.make_thumb(src.read_bytes()))
+        tmp.write_bytes(jpeg.make_thumb(src.read_bytes()))
         tmp.replace(dst)  # atomic, so a concurrent request never sees half a file
     return FileResponse(dst, media_type="image/jpeg", headers=IMMUTABLE)
