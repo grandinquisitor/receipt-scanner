@@ -90,6 +90,20 @@ Use **Re-crop** on a receipt to rerun detection and unwarping on its stored phot
 
 Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 
+## Backups
+
+```sh
+python3 scripts/backup.py       # writes backups/receipts-YYYYMMDD-HHMMSS.zip
+```
+
+This saves the database and every receipt photo into one zip. It's safe to run while the server is up, and
+it needs only Python's standard library, so it also works on the Docker host against the mounted `./data`.
+Thumbnails and the model are left out because the app rebuilds them. `--data-dir` and `--out` change
+where it reads from and writes to. Copy the zips somewhere other than this disk; for a nightly backup, add
+a cron line such as `0 3 * * * cd /path/to/receipt_scanner && python3 scripts/backup.py`.
+
+To restore, stop the server and unzip into an empty data directory: `unzip backups/receipts-....zip -d data`.
+
 ## Security and privacy
 
 - **There is no login.** Anyone who can reach the server can see, edit and delete every receipt. By default
@@ -99,7 +113,7 @@ Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
 - **Receipt photos are shared with AI** when the `anthropic` extractor is used (the default). Use `ollama` to
   keep everything on your machine.
 - Your data lives in `data/` (database, photos, downloaded model) and your key in `.env`; both are ignored
-  by git. Back up `data/` if you care about the receipts.
+  by git. See [Backups](#backups).
 - To reach it from your phone away from home without opening it to the internet, see
   [Side quest: a Raspberry Pi you can reach from anywhere](#side-quest-a-raspberry-pi-you-can-reach-from-anywhere).
 
