@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
         # Fetch the model in the background (first run only); the image worker loads it per job.
         threading.Thread(target=u.prepare, name="unwarper-prepare", daemon=True).start()
     yield
+    worker.shutdown()
 
 
 app = FastAPI(title="Receipt Scanner", lifespan=lifespan)

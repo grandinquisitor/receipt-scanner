@@ -1,34 +1,74 @@
-"""Run the heavy image processing (OpenCV, numpy, the UVDoc model) in a short-lived child process.
+"""Run the heavy image processing (OpenCV, numpy, the UVDoc model) in a separate worker process.
 
-Those libraries and the model take ~85 MB once loaded, but are only needed for the few seconds after an
-upload or re-crop. Each job gets a fresh process that exits when it's done, so the web server itself stays
-small while idle. Jobs run one at a time, which also caps peak memory. The cost is ~1-2 s per job to start
-the process and load the libraries.
+Those libraries and the model take ~85 MB once loaded but are only needed while photos are being processed,
+so the web server never imports them. The worker process is started on the first job, kept warm while
+more photos arrive (so a batch only pays the start-up once), and exits after RECEIPT_WORKER_IDLE_S seconds
+(default 300) without work, giving the memory back. Starting it costs several seconds on a Raspberry Pi
+(imports, loading the model, onnxruntime's slow first run), which is why it isn't started per job.
+Jobs run one at a time, which also caps peak memory.
 """
 
+import functools
+import logging
 import multiprocessing
+import os
 import threading
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-_one_at_a_time = threading.Lock()  # caps peak memory: never two image jobs at once
-_spawn = multiprocessing.get_context("spawn")  # a clean interpreter, not a fork of the threaded server
+log = logging.getLogger(__name__)
+
+IDLE_S = float(os.environ.get("RECEIPT_WORKER_IDLE_S", "300"))
+
+_lock = threading.Lock()  # held for each whole job: never two image jobs at once
+_pool: ProcessPoolExecutor | None = None
+_generation = 0           # bumped by every job, so a stale idle timer knows not to stop the worker
+_timer: threading.Timer | None = None
 
 
 def _run(fn, *args):
-    with _one_at_a_time:
-        # A fresh single-use pool per job: the child exits as soon as the job is done, and no idle
-        # process is kept waiting for the next one.
-        with ProcessPoolExecutor(max_workers=1, mp_context=_spawn) as pool:
-            try:
-                return pool.submit(fn, *args).result()
-            except BrokenProcessPool:
-                raise RuntimeError("the image-processing process crashed (out of memory?)") from None
+    global _pool, _generation, _timer
+    with _lock:
+        _generation += 1
+        if _timer is not None:
+            _timer.cancel()
+        if _pool is None:
+            # "spawn" starts a clean interpreter rather than forking the multi-threaded server.
+            _pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
+        try:
+            return _pool.submit(fn, *args).result()
+        except BrokenProcessPool:
+            _pool = None  # the worker died (e.g. killed for lack of memory); the next job starts a new one
+            raise RuntimeError("the image-processing process crashed (out of memory?)") from None
+        finally:
+            _timer = threading.Timer(IDLE_S, _stop_if_idle, args=(_generation,))
+            _timer.daemon = True
+            _timer.start()
+
+
+def _stop_if_idle(generation: int) -> None:
+    global _pool
+    with _lock:
+        if generation == _generation and _pool is not None:
+            _pool.shutdown()
+            _pool = None
+            log.info("image worker stopped after %.0fs idle", IDLE_S)
+
+
+def shutdown() -> None:
+    global _pool
+    with _lock:
+        if _timer is not None:
+            _timer.cancel()
+        if _pool is not None:
+            _pool.shutdown(cancel_futures=True)
+            _pool = None
 
 
 # ---- the jobs; these functions run in the child process ----
 
+@functools.cache  # one per worker process, so the model stays loaded between jobs
 def _unwarper(model_dir: Path):
     from .unwarp import get_unwarper  # reads RECEIPT_UNWARPER, inherited from the server's environment
     return get_unwarper(model_dir)
