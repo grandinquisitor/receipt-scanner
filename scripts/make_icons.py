@@ -21,6 +21,10 @@ INK = "#bdbdb6"     # printed lines; --rule in index.html
 TOTAL = "#c3202a"   # the bold "total" line; --red in index.html
 
 
+def warn(msg: str):
+    print(msg, file=sys.stderr)
+
+
 def receipt(scale: float = 1.0):
     """Receipt outline and its printed lines, scaled about the centre (maskable icons need a margin)."""
     s = lambda x, y: (50 + (x - 50) * scale, 50 + (y - 50) * scale)
@@ -76,7 +80,7 @@ def main():
     if optipng := shutil.which("optipng"):
         subprocess.run([optipng, "-quiet", "-o7", *sorted(OUT.glob("*.png"))], check=True)
     else:
-        print("optipng not found; skipping extra PNG compression", file=sys.stderr)
+        warn("optipng not found; skipping extra PNG compression")
     for p in sorted(OUT.iterdir()):
         print(f"{p.name:28} {p.stat().st_size:>6} bytes")
 
