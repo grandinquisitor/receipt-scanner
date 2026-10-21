@@ -135,6 +135,15 @@ To restore, stop the server and unzip into an empty data directory: `unzip backu
 | GET | `/api/receipts/{id}/thumb/{original\|scan}` | small JPEG for the list |
 | GET | `/api/receipts.csv` | export; takes the same `tag` / `untagged` filters |
 
+## Tests
+
+```sh
+uv run pytest
+```
+
+They take about a second and need no API key or network access: they use a fake extractor and a temporary
+data directory, and the image tests draw synthetic photos.
+
 ## Raspberry Pi deployment you can reach from anywhere
 
 You can run this app on a Pi at home and use it from your phone wherever you
