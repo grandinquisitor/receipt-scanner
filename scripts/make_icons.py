@@ -8,6 +8,7 @@ The icon is a white receipt with a zigzag tear-off edge on the counter grey-gree
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -18,6 +19,10 @@ COUNTER = "#4b5552"  # a darker shade of --counter in index.html, so the white r
 PAPER = "#ffffff"
 INK = "#bdbdb6"     # printed lines; --rule in index.html
 TOTAL = "#c3202a"   # the bold "total" line; --red in index.html
+
+
+def warn(msg: str):
+    print(msg, file=sys.stderr)
 
 
 def receipt(scale: float = 1.0):
@@ -75,7 +80,7 @@ def main():
     if optipng := shutil.which("optipng"):
         subprocess.run([optipng, "-quiet", "-o7", *sorted(OUT.glob("*.png"))], check=True)
     else:
-        print("optipng not found; skipping extra PNG compression")
+        warn("optipng not found; skipping extra PNG compression")
     for p in sorted(OUT.iterdir()):
         print(f"{p.name:28} {p.stat().st_size:>6} bytes")
 
