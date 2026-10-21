@@ -6,9 +6,9 @@ A small self-hosted web app for keeping receipts. Snap a photo on your phone (or
   creases with a neural unwarping model;
 - has an AI model read the **vendor, total, date** and a short **description** of what was bought, and
   turns sideways photos upright;
-- stores everything in SQLite, with editable fields, **tags**, tag filtering and CSV export.
+- stores everything in SQLite, with editable fields, tags, tag filtering and CSV export.
 
-It runs on your own computer; you use it from your phone's browser on the same network.
+It runs on your own computer or raspberry pi; you use it from your phone's browser on the same network.
 
 <p align="center">
   <img src="docs/screenshots/phone-light.png" width="260" alt="Receipt list on a phone">
@@ -17,8 +17,6 @@ It runs on your own computer; you use it from your phone's browser on the same n
 </p>
 
 <p align="center"><img src="docs/screenshots/desktop.png" width="800" alt="Receipt list in a desktop browser"></p>
-
-<sub>Screenshots use made-up receipts.</sub>
 
 ## Requirements
 
@@ -98,7 +96,7 @@ Other settings: `RECEIPT_DATA_DIR` (default `./data`), `HOST`, `PORT`.
   it listens on all network interfaces (`HOST=0.0.0.0`) so your phone can reach it over your home network.
   Only run it on a network you trust, and don't expose it to the internet (no port forwarding). Set
   `HOST=127.0.0.1` to allow only the computer it runs on.
-- **Receipt photos go to Anthropic** when the `anthropic` extractor is used (the default). Use `ollama` to
+- **Receipt photos are shared with AI** when the `anthropic` extractor is used (the default). Use `ollama` to
   keep everything on your machine.
 - Your data lives in `data/` (database, photos, downloaded model) and your key in `.env`; both are ignored
   by git. Back up `data/` if you care about the receipts.
