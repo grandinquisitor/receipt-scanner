@@ -1,0 +1,16 @@
+services:
+  receipt_scanner:
+    build: .
+    restart: unless-stopped
+    user: "1000:1000"  # so files in ./data belong to the host user, not root
+    env_file:
+      - path: .env     # ANTHROPIC_API_KEY etc.; copied to the server by hand, never committed
+        required: false
+    environment:       # these win over .env
+      RECEIPT_DATA_DIR: /app/data
+      HOST: 0.0.0.0
+      PORT: "8088"
+    volumes:
+      - ./data:/app/data  # database, photos, thumbnails, downloaded model
+    ports:
+      - "8088:8088"

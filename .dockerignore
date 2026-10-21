@@ -1,0 +1,7 @@
+.git
+.venv
+data
+.env
+**/__pycache__
+**/*.swp
+dist
