@@ -77,6 +77,7 @@ class UVDocUnwarper:
         try:
             import onnxruntime as ort  # imported lazily so "none" works without it
 
+            ort.disable_telemetry_events()
             if not self.model_path.exists() or _sha256(self.model_path.read_bytes()) != MODEL_SHA256:
                 fetch_model(self.model_path)
             self._session = ort.InferenceSession(str(self.model_path), providers=["CPUExecutionProvider"])
