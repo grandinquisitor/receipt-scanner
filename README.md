@@ -10,6 +10,16 @@ A small self-hosted web app for keeping receipts. Snap a photo on your phone (or
 
 It runs on your own computer; you use it from your phone's browser on the same network.
 
+<p align="center">
+  <img src="docs/screenshots/phone-light.png" width="260" alt="Receipt list on a phone">
+  <img src="docs/screenshots/phone-filter.png" width="260" alt="Receipts filtered by the business and travel tags">
+  <img src="docs/screenshots/phone-lightbox.png" width="260" alt="A cropped and straightened receipt in the image viewer">
+</p>
+
+<p align="center"><img src="docs/screenshots/desktop.png" width="800" alt="Receipt list in a desktop browser"></p>
+
+<sub>Screenshots use made-up receipts.</sub>
+
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs the right Python (3.13) and
